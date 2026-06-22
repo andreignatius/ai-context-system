@@ -20,16 +20,37 @@ An in-house AI system for managing LLM context using LangGraph, with a focus on 
 - [ ] Langfuse observability
 
 ## Project Structure
+```
+ai-context-system/
+├── README.md
+├── docs/journal.md
+└── langgraph-app/
+    ├── .env.example        # template for secrets (copy to .env)
+    ├── requirements.txt    # active deps live; rest commented from the freeze
+    ├── main.py             # entry point
+    ├── simple_agent.py     # original single-file prototype (kept for reference)
+    ├── src/
+    │   ├── state.py        # AgentState + add_messages reducer
+    │   ├── config.py       # LLM + Langfuse setup
+    │   ├── nodes.py        # graph nodes
+    │   └── graph.py        # builds + compiles the graph
+    └── tests/
+        └── test_graph.py
+```
 
 ## Setup
 1. Clone the repo
 2. Create virtual environment: `python3.11 -m venv venv`
 3. Install dependencies: `pip install -r langgraph-app/requirements.txt`
 4. Ensure Ollama is running with models pulled
-5. Run: `python langgraph-app/simple_agent.py`
+5. Run: `cd langgraph-app && python main.py`
+6. Run tests: `cd langgraph-app && pytest`
 
 ## Journal
 See `docs/journal.md` for daily progress, notes, and blockers.
+
+## Lessons
+See `docs/lessons.md` for written-up concept notes (e.g. state & reducers).
 
 ## License
 MIT
