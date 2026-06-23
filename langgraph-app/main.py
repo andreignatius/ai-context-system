@@ -5,6 +5,7 @@ Run from the langgraph-app/ directory:
 """
 
 from src.graph import build_graph
+from langgraph.checkpoint.memory import MemorySaver
 
 
 def main():
@@ -20,13 +21,17 @@ def main():
     print(result["messages"][-1].content)
 
 def chat():
-    # multi-turn chat loop: carries conversation state across turns
-    app = build_graph()
+    # multi-turn chat loop with checkpointer for automatic memory
+    checkpointer = MemorySaver() # auto-save store (in RAM for now)
+    app = build_graph(checkpointer)
 
-    # these live across turns / prompts
-    # this is what gives agent its memory
-    messages = []
-    scratchpad = ""
+    # the "save slot" for this convo
+    config = {"configurable": {"thread_id": "andre-1"}}
+
+    # # these live across turns / prompts
+    # # this is what gives agent its memory
+    # messages = []
+    # scratchpad = ""
 
     print("Chat with the agent. Type 'quit' or 'exit' to stop.\n")
     while True:
@@ -34,19 +39,23 @@ def chat():
         if user_input.strip().lower() in {"quit", "exit"}:
             print("Goodbye!")
             break
-        result = app.invoke(
-            {
-                "query": user_input,
-                "messages": messages, # feed in the entire prior conversation
-                "scratchpad": scratchpad,
-            }
-        )
+        # result = app.invoke(
+        #     {
+        #         "query": user_input,
+        #         "messages": messages, # feed in the entire prior conversation
+        #         "scratchpad": scratchpad,
+        #     }
+        # )
+
+        # note: we only pass the new query, checkpointer reloads the
+        # prior messages automatically, keyed by thread_id
+        result = app.invoke({"query": user_input}, config)
         reply = result["messages"][-1].content
         print(f"Assistant: {reply}\n")
 
-        # save the updated state back, so the next turn remembers this one
-        messages = result["messages"]
-        scratchpad = result["scratchpad"]
+        # # save the updated state back, so the next turn remembers this one
+        # messages = result["messages"]
+        # scratchpad = result["scratchpad"]
 
 
 if __name__ == "__main__":

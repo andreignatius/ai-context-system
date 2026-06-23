@@ -6,7 +6,7 @@ from .nodes import generate_response, process_input
 from .state import AgentState
 
 
-def build_graph():
+def build_graph(checkpointer=None):
     """Build and compile the agent graph.
 
     Flow: process_input -> generate_response -> END
@@ -20,4 +20,4 @@ def build_graph():
     builder.add_edge("process_input", "generate_response")
     builder.add_edge("generate_response", END)
 
-    return builder.compile()
+    return builder.compile(checkpointer=checkpointer)
