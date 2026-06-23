@@ -14,3 +14,4 @@ class AgentState(TypedDict):
     messages: Annotated[list, add_messages]  # conversation history (reducer-managed)
     scratchpad: str                          # accumulated working memory
     query: str                               # current user question
+    context: str                             # retrieved RAG chunks for this turn (replaced each turn)

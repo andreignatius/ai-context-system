@@ -8,6 +8,7 @@ reducer, e.g. `add_messages` for `messages`).
 from langchain_core.messages import HumanMessage, SystemMessage
 
 from .config import get_langfuse_handler, get_llm, SYSTEM_PROMPT
+from .rag import get_vectorstore
 
 llm = get_llm()
 langfuse_handler = get_langfuse_handler()
@@ -28,11 +29,28 @@ def process_input(state) -> dict:
     
     return {"messages": new_messages}
 
+def retrieve(state) -> dict:
+    # select: fetch the top-k chunks most relevant to the current query
+    docs = get_vectorstore().similarity_search(state["query"], k=3)
+    context = "\n\n".join(d.page_content for d in docs)
+    return {"context": context}
+
 
 def generate_response(state) -> dict:
-    """Call the LLM on the full message history, with Langfuse tracing wired in."""
+    # call the LLM on the history, injecting retrieved context when present
+    context = state.get("context", "")
+    messages = state["messages"]
+    prompt = []
+    
+    if context:
+        # give model the retrieved chunks as system instruction for this call only
+        # this list is not returned into state["messages"], so it is never saved to history
+        prompt = [SystemMessage(content=f"Use this retrieved context to answer:\n\n{context}")] + messages
+    else:
+        prompt = messages
+
     response = llm.invoke(
-        state["messages"],
+        prompt,
         config={"callbacks": [langfuse_handler]},  # <-- this is what actually enables tracing
     )
 

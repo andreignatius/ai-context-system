@@ -18,7 +18,7 @@ def test_graph_compiles():
 
 
 def test_state_has_expected_keys():
-    assert set(AgentState.__annotations__) == {"messages", "scratchpad", "query"}
+    assert set(AgentState.__annotations__) == {"messages", "scratchpad", "query", "context"}
 
 
 def test_process_input_prepends_system_then_human_on_first_turn():
