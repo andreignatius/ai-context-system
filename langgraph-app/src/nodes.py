@@ -29,6 +29,25 @@ def process_input(state) -> dict:
     
     return {"messages": new_messages}
 
+def route_after_input(state) -> str:
+    """Agentic router: decide whether the question needs the knowledge base.
+
+    Returns "retrieve" (look up docs) or "skip" (answer directly).
+    """
+    decision = llm.invoke([
+        SystemMessage(content=(
+            "You are a routing classifier. Decide whether answering the user's "
+            "question requires looking up the internal Project Zephyr knowledge base "
+            "(a private company doc). Reply with ONLY one word: 'retrieve' or 'skip'. "
+            "Use 'retrieve' for anything about Project Zephyr, Calderwood Capital, or its "
+            "people/budget/details. Use 'skip' for general knowledge, math, or chit-chat."
+        )),
+        HumanMessage(content=state["query"]),
+    ])
+    choice = "retrieve" if "retrieve" in decision.content.lower() else "skip"
+    print(f"[router] {choice} (for: {state['query'][:50]})")
+    return choice
+
 def retrieve(state) -> dict:
     # select: fetch the top-k chunks most relevant to the current query
     docs = get_vectorstore().similarity_search(state["query"], k=3)
@@ -41,7 +60,7 @@ def generate_response(state) -> dict:
     context = state.get("context", "")
     messages = state["messages"]
     prompt = []
-    
+
     if context:
         # give model the retrieved chunks as system instruction for this call only
         # this list is not returned into state["messages"], so it is never saved to history
