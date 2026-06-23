@@ -51,6 +51,27 @@ Reviewed the repo structure and refactored the single-file prototype into a pack
 - Observability only works if the callback handler is passed to `.invoke()` - having
   the library imported is not enough.
 
+### Change 002: Milestone 1 - system prompt (23-Jun-2026)
+Added a system prompt to the agent (build milestone #1). Typed by hand to learn it.
+
+- `config.py` - added `SYSTEM_PROMPT`, read via `os.getenv("SYSTEM_PROMPT", default)`
+  so it can be overridden without editing code (config over hardcoding).
+- `nodes.py` - `process_input` now prepends a `SystemMessage` at the FRONT of the
+  conversation, but only ONCE: an `any(isinstance(m, SystemMessage) ...)` guard stops
+  a duplicate system prompt being added every turn (matters for multi-turn later).
+- `tests/test_graph.py` - updated to expect `[System, Human]` on the first turn, and
+  added an edge-case test that a second system message is NOT added.
+- Verified live against Ollama: same question + same code, but
+  `SYSTEM_PROMPT="...pirate..." python main.py` flipped the personality, then a plain
+  run returned to the friendly default. Proved both (a) system prompts steer behaviour
+  and (b) the env var overrides the default temporarily.
+
+#### Learning Notes
+- A "system prompt" is just a `SystemMessage` placed first; models are trained to read
+  rules-before-dialogue, so order matters. (See Lesson 002.)
+- The context window is a fixed token budget; the system prompt is an always-on cost
+  paid every call -> keep it lean, push question-specific info to retrieval later.
+
 ### Next Steps
 - [x] Install LangGraph
 - [ ] Set up Langfuse (cloud or self-hosted) and confirm a trace appears
@@ -137,6 +158,8 @@ is where depth happens; that is fine.
 
 Numbered 1-12 in build order. Each lists the concepts it exercises.
 (Estimates are focused build time; expect longer on the first pass while learning.)
+
+Progress: [x] 1 system prompt (23-Jun) | [ ] 2-12 pending
 
 **Milestone 0 - Foundations** (quick wins, build confidence)
 

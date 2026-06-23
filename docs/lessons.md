@@ -135,3 +135,88 @@ into the old state per field - `messages` is set to append (so history grows),
 - [ ] Give `scratchpad` its own reducer so it accumulates instead of replacing.
 - [ ] See it "break and heal": a parallel node writing `messages` without vs. with
       a reducer.
+
+---
+
+## Lesson 002: message types & the system prompt (23-Jun-2026)
+
+### The big picture
+- Every message has a ROLE. There are three main types:
+  | Type            | Role                  | Who "speaks"        | Example                         |
+  |-----------------|-----------------------|---------------------|---------------------------------|
+  | `SystemMessage` | setup / instructions  | you, the developer  | "You are a concise math tutor." |
+  | `HumanMessage`  | the user's input      | the user            | "What is 2+2?"                  |
+  | `AIMessage`     | the model's reply     | the LLM             | "4"                             |
+- A "system prompt" is just a `SystemMessage` placed at the FRONT of the messages
+  list. It sets the agent's role, rules, and output format for the whole session.
+- We already use `HumanMessage` and `AIMessage` in `nodes.py`. `SystemMessage` is
+  the one not used yet - adding it IS Milestone 1.
+
+### The model doesn't see "objects" - it sees one string
+The list of message objects is flattened by a CHAT TEMPLATE into a single block of
+text, with special role-marker tokens. For a Llama-style model:
+```
+<|system|>
+You are a math tutor.
+<|user|>
+What is 2+2?
+<|assistant|>
+```
+So a "role" is just a label wrapped around your text so the model knows who said
+what. The whole conversation becomes one long string; the model predicts what comes
+after the final `<|assistant|>`.
+
+### Why order matters (system goes FIRST)
+- Position = meaning, because it is read top-to-bottom as one string.
+- Models are TRAINED with system instructions at the very top, before any user turn.
+- Put the system message last and (a) it is a shape the model rarely saw in training,
+  so it is followed less reliably, and (b) it is backwards - giving the rules after
+  the user already spoke.
+- Rule: system first, then human/AI turns in chronological order.
+
+### Standing vs. spoken
+- `SystemMessage` = STANDING instructions: set once, applies to the whole session,
+  usually one message at the front that never repeats. The user never sees it.
+- `HumanMessage` / `AIMessage` = the SPOKEN dialogue: each is one turn, and they keep
+  ACCUMULATING (via the `add_messages` reducer from Lesson 001).
+
+### Token budgeting: what belongs in the system prompt?
+- The context window is a FIXED budget (tokens; ~3/4 word each). Everything competes:
+  ```
+  [system prompt] + [history] + [retrieved docs] + [user question] + [ROOM FOR ANSWER]
+  ```
+- The system prompt is an ALWAYS-ON cost: re-sent on every call, paid every time.
+- Decision rule (this maps onto the project thesis):
+  | If the info is...                         | Put it in...          | Pillar   |
+  |-------------------------------------------|-----------------------|----------|
+  | ALWAYS needed (role, rules, format)       | the system prompt     | Write    |
+  | SOMETIMES needed (facts, docs)            | retrieved on demand   | Select   |
+  | OLD / stale (early history)               | summarized or dropped | Compress |
+- Lesson: don't permanently carry what you can fetch on demand. Keep the system
+  prompt for what is UNIVERSALLY true about the agent.
+
+### Failure modes (find the sweet spot, not the maximum)
+- Case A - NO system prompt: generic, inconsistent tone, no sense of role/format.
+  (This is what the agent is now.)
+- Case B - GOOD system prompt: short, specific, every line earns its place
+  (role + format + a safety rule). ~40 tokens, big behavior change.
+- Case C - BLOATED system prompt: backfires.
+  - Instruction dilution: more rules -> FEWER reliably followed.
+  - "Lost in the middle": models attend most to the start/end, weakest in the middle,
+    so buried rules get ignored.
+  - Crowds out history: a huge prompt leaves less room, so the agent FORGETS earlier
+    turns - it gets "dumber" about the actual conversation.
+  - Slower + costlier; long prompts also accumulate contradictions.
+
+### Not a security boundary
+A system prompt STEERS behavior but does not HARD-ENFORCE it; a clever user can talk
+the model out of it. That is why Guardrails (Milestone 9) is a separate layer.
+
+### One-sentence summary
+A system prompt is a `SystemMessage` at the front of the messages list - your
+standing, always-on instructions; keep it lean (it is paid every call) and push
+question-specific info to retrieval.
+
+### To revisit / try next
+- [ ] Build Milestone 1: add a small, Case-B-quality system prompt to the agent.
+- [ ] Learn to actually MEASURE tokens (so budget sizes stop being abstract).

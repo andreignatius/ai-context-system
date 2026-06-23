@@ -12,6 +12,13 @@ from langfuse.langchain import CallbackHandler
 
 load_dotenv()
 
+# system prompt: standing instructions for the agent (Milestone 1)
+# short and specific, override via the SYSTEM_PROMPT env var
+SYSTEM_PROMPT = os.getenv(
+    "SYSTEM_PROMPT",
+    "You are a concise, friendly assistant. Answer in 2-3 sentences. "
+    "If you are unsure, kindly say so rather than guessing."
+)
 
 def get_llm() -> ChatOllama:
     """Local Ollama chat model. Connection is lazy — no network call until invoke()."""
