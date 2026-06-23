@@ -41,7 +41,7 @@ aiosqlite==0.21.0                      # Milestone 3: SqliteSaver dependency
 # cffi==2.0.0
 # chardet==5.2.0
 # charset-normalizer==3.4.7
-# chromadb==1.5.2
+chromadb==1.5.2                        # Milestone 4: vector store
 # click==8.4.1
 # cryptography==46.0.5
 # ctranslate2==4.8.0
@@ -105,11 +105,12 @@ aiosqlite==0.21.0                      # Milestone 3: SqliteSaver dependency
 # kubernetes==36.0.2
 # langchain==1.2.10
 # langchain-classic==1.0.1
+langchain-chroma==1.1.0                # Milestone 4: LangChain Chroma wrapper
 # langchain-community==0.4.1
 langchain-core==1.4.8
 langchain-ollama==1.1.0
 # langchain-protocol==0.0.18
-# langchain-text-splitters==1.1.1
+langchain-text-splitters==1.1.1        # Milestone 4: chunking
 langfuse==4.9.1
 langgraph==1.0.10
 langgraph-checkpoint==4.1.1            # Milestone 3: persistent memory
