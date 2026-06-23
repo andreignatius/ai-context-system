@@ -23,7 +23,8 @@ SYSTEM_PROMPT = os.getenv(
 def get_llm() -> ChatOllama:
     """Local Ollama chat model. Connection is lazy — no network call until invoke()."""
     return ChatOllama(
-        model=os.getenv("OLLAMA_MODEL", "llama3.2:latest"),
+        # model=os.getenv("OLLAMA_MODEL", "llama3.2:latest"),
+        model=os.getenv("OLLAMA_MODEL", "deepseek-r1:latest"),
         temperature=0.7,
     )
 

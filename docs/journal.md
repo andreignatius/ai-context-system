@@ -72,11 +72,40 @@ Added a system prompt to the agent (build milestone #1). Typed by hand to learn 
 - The context window is a fixed token budget; the system prompt is an always-on cost
   paid every call -> keep it lean, push question-specific info to retrieval later.
 
+### Change 003: Milestone 2 - multi-turn chat loop (23-Jun-2026)
+Turned the single-shot entry point into a real conversation. Typed by hand.
+
+- `main.py` - added a `chat()` function: a `while True` loop that reads input, calls
+  `app.invoke(...)`, prints the reply, then saves the result back via
+  `messages = result["messages"]` so the NEXT turn starts where this one ended.
+  Kept the old `main()` (commented out) for reference.
+- Key distinction learned: the `add_messages` reducer appends WITHIN one graph run
+  (across nodes); the chat loop carries state BETWEEN graph runs (across turns).
+  A 3-turn conversation = 3 graph runs wrapped in 1 chat loop.
+- Verified live: told it "my name is Andre, favourite number 42", then a later turn
+  correctly recalled both, and multiplied 42 x 2 = 84. The single-shot version could
+  not have remembered (it starts each run from `messages = []`).
+- The system-prompt-once guard (Milestone 1) paid off: one system message stayed at
+  the front across all turns, no duplicates.
+- "Break it on purpose" experiment: commented out `messages = result["messages"]` and
+  the agent forgot everything (Turn 2: "our conversation just started"). Confirmed
+  memory lives in that single carry-forward line. Also confirmed the `scratchpad`
+  save-back is a red herring here - scratchpad is not fed to the LLM yet. (See
+  Lesson 003.)
+
+#### Learning Notes
+- Graph run = one `app.invoke(...)` = one question answered.
+- Chat loop = the `while` loop that strings many graph runs together, feeding memory
+  forward. Memory lives in the variable carried across iterations, not in the graph.
+- Memory is currently IN-PROCESS only: quit the script and it is gone. Durable memory
+  across sessions = a checkpointer (Milestone 3 / WRITE).
+- Full write-up in Lesson 003 (graph runs vs the chat loop).
+
 ### Next Steps
 - [x] Install LangGraph
 - [ ] Set up Langfuse (cloud or self-hosted) and confirm a trace appears
 - [ ] Build a simple agent with memory scratchpad
-- [ ] Install pytest and run the real test suite (`pip install pytest && pytest`)
+- [x] Install pytest and run the real test suite (4 tests passing, 23-Jun)
 - [ ] Add a conditional edge / loop (move beyond linear flow)
 - [ ] Add a checkpointer for persistent state across runs
 
@@ -159,7 +188,7 @@ is where depth happens; that is fine.
 Numbered 1-12 in build order. Each lists the concepts it exercises.
 (Estimates are focused build time; expect longer on the first pass while learning.)
 
-Progress: [x] 1 system prompt (23-Jun) | [ ] 2-12 pending
+Progress: [x] 1 system prompt | [x] 2 multi-turn loop (both 23-Jun) | [ ] 3-12 pending
 
 **Milestone 0 - Foundations** (quick wins, build confidence)
 

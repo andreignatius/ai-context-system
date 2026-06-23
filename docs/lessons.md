@@ -131,7 +131,8 @@ into the old state per field - `messages` is set to append (so history grows),
   time-travel possible.
 
 ### To revisit / try next
-- [ ] Run a tiny demo that prints the messages list growing each step.
+- [x] Run a tiny demo that prints the messages list growing each step.
+      (Done: `langgraph-app/demos/reducer_demo.py`.)
 - [ ] Give `scratchpad` its own reducer so it accumulates instead of replacing.
 - [ ] See it "break and heal": a parallel node writing `messages` without vs. with
       a reducer.
@@ -218,5 +219,85 @@ standing, always-on instructions; keep it lean (it is paid every call) and push
 question-specific info to retrieval.
 
 ### To revisit / try next
-- [ ] Build Milestone 1: add a small, Case-B-quality system prompt to the agent.
+- [x] Build Milestone 1: add a small, Case-B-quality system prompt to the agent.
+      (Done 23-Jun; verified live with a pirate-vs-friendly override.)
 - [ ] Learn to actually MEASURE tokens (so budget sizes stop being abstract).
+
+---
+
+## Lesson 003: graph runs vs the chat loop - memory across turns (23-Jun-2026)
+
+### The big picture: two timescales
+There are TWO different "lifetimes" for the messages list, and it is easy to mix them:
+- WITHIN one graph run: the `add_messages` reducer (Lesson 001) appends across NODES.
+  messages grows [] -> [System, Human] -> [System, Human, AI] during one `invoke`.
+- ACROSS graph runs: each new `invoke` starts from whatever messages you hand it.
+  The chat loop is what carries the result of one run into the next.
+
+The reducer accumulates inside one trip through the graph. The chat loop accumulates
+across trips. Different scopes.
+
+### Definitions
+- Graph run = ONE `app.invoke(...)` = the nodes run once = one question answered.
+- Chat loop = the `while True:` loop that calls `invoke` over and over, feeding state
+  forward, until you type quit.
+
+A chat loop CONTAINS many graph runs:
+```
+CHAT LOOP (while-loop in main.py)
+|
++-- turn 1 --> ONE GRAPH RUN (app.invoke)
+|               +-- node process_input
+|               +-- node generate_response
++-- turn 2 --> ONE GRAPH RUN (app.invoke)
++-- turn 3 --> ONE GRAPH RUN (app.invoke)
+```
+So a 3-turn conversation = 3 graph runs wrapped in 1 chat loop.
+
+Analogy: a graph run is one round trip to the kitchen (take order, cook, serve). The
+chat loop is the waiter working the whole evening, remembering what the table already
+ordered so the next dish fits. The kitchen only handles one order at a time.
+
+### The line that IS the memory
+In `main.py`'s `chat()`:
+```python
+result = app.invoke({"query": user_input, "messages": messages, "scratchpad": scratchpad})
+...
+messages = result["messages"]      # <-- save it back, so the NEXT run starts here
+```
+Feeding `messages` IN gives this run the prior conversation; saving it back OUT lets
+the next run continue from here. That one assignment strings the trips together.
+
+### The "break it on purpose" experiment
+Comment out the save-back line and run the same memory test:
+```python
+# messages = result["messages"]
+```
+Result: the agent FORGETS. Turn 2 ("what is my name?") replies "our conversation just
+started", because messages stays [] forever -> every turn is a fresh graph run with no
+history. Same graph, same nodes, same system prompt; removing ONE line removes memory.
+
+Conclusion: memory is not in the graph, the nodes, or the system prompt. It is the
+single variable carried from one graph run to the next.
+
+### Subtle: it is `messages`, not `scratchpad`
+Of the two save-back lines, only `messages = result["messages"]` controls memory.
+`scratchpad` is NOT sent to the LLM yet - `generate_response` calls
+`llm.invoke(state["messages"], ...)`, so only messages reaches the model. Commenting
+the scratchpad line has zero effect on this test. (scratchpad gets used later, in
+the Compress milestone.) Good debugging instinct: find the exact line responsible.
+
+### In-process vs durable
+This memory is IN-PROCESS only: it lives in a Python variable, so quitting the script
+wipes it. Run `python main.py` again and the agent does not know you. Remembering
+ACROSS sessions needs a checkpointer that saves state to memory/SQLite, plus a
+`thread_id` to resume a conversation - that is Milestone 3 (WRITE).
+
+### One-sentence summary
+The reducer appends messages within one graph run; the chat loop carries messages
+between graph runs - remove that carry and every turn is a stranger; persist it to
+disk (a checkpointer) and the agent remembers across sessions.
+
+### To revisit / try next
+- [ ] Build Milestone 3: swap the manual `messages` variable for a checkpointer
+      + `thread_id` so memory survives a restart.
