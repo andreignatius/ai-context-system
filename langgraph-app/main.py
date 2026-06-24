@@ -28,7 +28,7 @@ def chat():
     with SqliteSaver.from_conn_string(db_path) as checkpointer:
         app = build_graph(checkpointer)
         # the "save slot" for this convo
-        config = {"configurable": {"thread_id": "andre-2"}}
+        config = {"configurable": {"thread_id": "compress-test-2"}}
 
         # # these live across turns / prompts
         # # this is what gives agent its memory
