@@ -39,6 +39,9 @@ Thumbs.db
 *.sqlite
 *.sqlite3
 
+# Vector store (Chroma persist dir — generated, don't commit)
+**/chroma_db/
+
 # Ollama models (HUGE — don't commit!)
 **/models/
 **/.ollama/
