@@ -42,6 +42,9 @@ Thumbs.db
 # Vector store (Chroma persist dir — generated, don't commit)
 **/chroma_db/
 
+# Private (not for sharing)
+docs/profile.md
+
 # Ollama models (HUGE — don't commit!)
 **/models/
 **/.ollama/

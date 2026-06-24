@@ -871,3 +871,48 @@ work stays private.
 ### To revisit / try next
 - [ ] Scope + build Milestone 7: a supervisor + 1-2 stateless specialists with isolated
       context; verify the specialist's working never enters the main messages.
+
+---
+
+## Lesson 011: TDD agents - independent verification (24-Jun-2026)
+(From building the capstone code-builder v1, Phase A. The QA agent design.)
+
+### The decision: QA writes tests from the SPEC ALONE
+Two ways to wire a QA / test agent:
+- spec + code -> tests tend to CONFIRM what the code does (biased to the implementation).
+  A buggy code + matching tests = FALSE GREEN (looks passing, is wrong).
+- spec ONLY -> tests encode what is CORRECT (from the contract), independent of the code.
+  If the code is wrong, the independent tests CATCH it. This is true TDD.
+Choose spec-only: the QA becomes a genuine ADVERSARY of the code, both answering to the spec.
+
+### The payoff (seen live, before we even ran the tests)
+Code + tests now derive INDEPENDENTLY from the spec, so they can DISAGREE - and the
+disagreement is the QA doing its job. Example: the coder returned False for "" (because
+`"".isalnum()` is False), but the spec + QA tests say "" is a palindrome (True). The
+independent test catches a real coder bug. That mismatch is the entire reason the
+architecture exists (in v2 the fix-loop feeds it back to the coder).
+
+### The flip side: spec ambiguity becomes divergence
+With independent code + tests, the SPEC is the SOLE shared contract. A vague spec -> coder
+and QA resolve the ambiguity differently -> false failures (code "right" by one reading,
+tests by another). So spec precision matters even MORE (Lesson 010 IN-boundary, sharpened).
+
+### Tactical notes from the build
+- POSITIVE prompts beat NEGATIVE: "Output ONLY these 4 fields" stopped the orchestrator
+  leaking an implementation; "do NOT write code" had not (Lesson 002 - negative instructions
+  are weakly followed, especially by small models).
+- LLM output needs CLEANING before execution: models wrap code in ```fences```; strip them
+  before writing to a .py file or it is a syntax error. A cleanup layer always sits between
+  the LLM and execution (same theme as JSON parsing in RAG, framing in compress).
+- RELATIVE imports need a module run: a file with `from .config` cannot be run as
+  `python agents.py` (no package context -> "attempted relative import with no known parent
+  package"); run `python -m src.agents` from the parent dir.
+
+### One-sentence summary
+Feed the QA/test agent the SPEC ALONE (not the code) so its tests verify CORRECTNESS
+independently and catch coder bugs - true TDD; the cost is the spec must be precise, because
+it is now the only shared contract between the two independent agents.
+
+### To revisit / try next
+- [ ] Step 5: run the tests in a sandbox; watch the empty-string test FAIL (QA catching the bug).
+- [ ] v2: the fix-loop feeds that failure back to the coder to iterate.

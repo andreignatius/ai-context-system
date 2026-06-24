@@ -313,6 +313,38 @@ keep the agent within budget. The project's namesake pillar. Typed by hand.
 - Two more "replace became add" slips (the graph edge; the context branch overwriting
   extras) - a recurring personal error pattern; worth a quick re-read after every refactor.
 
+### Change 009: Capstone v1 Phase A - the three agents (24-Jun-2026)
+Scaffolded the code-builder capstone and built its three ISOLATED-context agents. Typed by hand.
+
+- New module `code-builder/` (separate app, reuses langgraph-app patterns):
+  - `src/state.py` - `BuilderState` (request/spec/code/tests/test_result/status). Note: NO
+    `messages` field - the agents do NOT share a conversation; each builds its own. That
+    absence IS the isolation.
+  - `src/config.py` - `get_llm()` at temperature 0.2 (code wants determinism, not creativity).
+  - `src/agents.py` - orchestrator (request->spec), coder (spec->code), QA (spec->tests).
+    Each builds its OWN message list (own prompt + scoped input) and returns ONLY its artifact.
+- DESIGN DECISION (Andre): QA writes tests from the SPEC ALONE (TDD), not spec+code - so the
+  tests verify CORRECTNESS independently and can catch coder bugs (spec+code would bias tests
+  to confirm the code). Better than the original draft. Updated capstone.md.
+- Verified each agent in isolation (`python -m src.agents`):
+  - orchestrator -> a clean CONTRACT (name/signature/edge cases/examples), no leaked code.
+  - coder -> clean fence-free Python.
+  - QA -> an independent pytest suite importing `from solution import ...`.
+- THE PAYOFF (bug caught before we even ran tests): the code returns False for "" (because
+  "".isalnum() is False), but the spec + QA tests say "" is a palindrome (True). The
+  independent tests WILL catch the coder bug - the exact scenario the architecture exists for.
+  Predicted: 5 pass / 1 fail (empty string) when we run the sandbox (Step 5).
+
+#### Learning Notes (full write-up: Lesson 011)
+- TDD-from-spec makes QA an ADVERSARY of the code, both answering to the spec -> catches bugs.
+- Independent code + tests can DISAGREE; spec ambiguity becomes real divergence -> spec
+  precision matters even more (Lesson 010 IN-boundary, sharpened).
+- POSITIVE prompts beat NEGATIVE ("output ONLY these 4 fields" stopped the orchestrator
+  leaking an implementation; "do NOT write code" did not - Lesson 002).
+- LLM output needs CLEANING before execution (strip ```fences``` or it is a syntax error).
+- RELATIVE imports (`from .config`) need `python -m src.agents`, not `python agents.py`.
+- Build slips: string-literal "ORCHESTRATOR_PROMPT", missing comma, print-without-payload.
+
 ### Next Steps
 - [x] Install LangGraph
 - [ ] Set up Langfuse (cloud or self-hosted) and confirm a trace appears

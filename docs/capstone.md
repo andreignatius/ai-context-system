@@ -23,7 +23,7 @@ an objective done-check. The fix-loop is v2; parallelism + research agent are v3
 |--------------|---------------------------------------------------------|-------------|------------------------------|
 | Orchestrator | "structure the request into a clear spec; sequence work"| user request| a self-contained `spec`      |
 | Coder (B)    | "implement exactly this spec; return only Python code"  | spec        | `code` (a .py string)        |
-| QA (C)       | "given spec + code, write pytest tests; report pass/fail"| spec + code | `{tests, passed, failures}`  |
+| QA (C)       | "from the SPEC ALONE (TDD), write a pytest suite"        | spec ONLY   | `{tests, passed, failures}`  |
 
 ### The flow (no conditional edges yet)
 ```
@@ -33,7 +33,9 @@ write_spec  ->  write_code  ->  write_and_run_tests  ->  report  ->  END
 
 ### The boundaries (the part that matters - Lesson 010)
 - IN -> Coder: the `spec` only (self-contained; the orchestrator does the rewriting).
-- IN -> QA:    the `spec` + `code`.
+- IN -> QA:    the `spec` ONLY (decision 24-Jun). TDD - tests derive from the CONTRACT, not
+  the code, so they verify CORRECTNESS independently and can catch coder bugs. (Feeding code
+  too would bias the tests to confirm what the code does = false green.)
 - OUT <- Coder: just `code`.   OUT <- QA: a STRUCTURED `{passed, failures}`.
 - ISOLATION proof: each agent builds its OWN message list (own prompt + scoped input);
   the shared state holds only the ARTIFACTS (spec/code/result), never the agents'
