@@ -243,3 +243,28 @@ per-agent model.
   (internet/prior-art); structured results with sources/confidence.
 - Domain port: backtester agent (yfinance data, Sharpe/drawdown/turnover, forward-bias
   prevention by engine structure). "correct" != "profitable".
+
+## Shipped (C) + honest gaps   [26-Jun]
+The builder is SHIPPED + OBSERVABLE:
+- M11 API: `src/api.py` (FastAPI) - POST /build runs the autonomous graph, returns
+  {status, spec, code, tests}; free Swagger at /docs (Change 017).
+- M12 Deploy: `Dockerfile` + `.dockerignore` - containerized; reaches host Ollama via
+  host.docker.internal + OLLAMA_BASE_URL (Change 018).
+- Observability: a Langfuse callback on `app.invoke` traces the WHOLE multi-agent build (root
+  LangGraph trace + every node + every agent LLM call + the judge) as a nested tree
+  (Change 020, Lesson 020).
+- Eval: `src/evals.py` measures the autonomous pass-rate (qwen2.5-coder ~80-100%; weak models
+  ~0-20% - Lesson 016). The eval is the scorecard for any future change.
+
+HONEST M8/M9 gaps (PARTIAL, not "done" - 26-Jun):
+- M8 Tools: the sandbox = code-execution-as-a-tool (the spirit), but NO model-driven
+  tool-calling (LangChain @tool/bind_tools/ToolNode, ReAct); actions are hardcoded pipeline
+  steps, and there are no external tools.
+- M9 Guardrails: the sandbox (temp dir + subprocess + timeout) + the brakes are real guardrails,
+  but it is NOT true isolation (no network/fs/privilege sandbox - a hostile model could still
+  harm), and there is no prompt-injection defense, input/output validation/refusals, or API
+  auth/rate-limit.
+
+FUTURE WORK: per-agent models (Lesson 016/017); real tool-calling (M8); a hardened sandbox +
+injection/validation + auth (M9); a stateful session API (human intervention over HTTP); the
+backtester domain port.

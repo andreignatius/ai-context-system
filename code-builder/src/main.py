@@ -4,6 +4,9 @@
 """
 
 from src.graph import build_graph
+from src.config import get_langfuse_handler
+
+_handler = get_langfuse_handler()
 
 def print_result(result):
     """Normal end-of-build output (on success)."""
@@ -38,7 +41,7 @@ def run_one_build(app):
 
     build = {"request": base_request, "feedback": "", "fix_target": ""}   # a FRESH build
     while True:
-        result = app.invoke(build)
+        result = app.invoke(build, config={"callbacks": [_handler]})
 
         if result["status"] == "ok":
             print_result(result)

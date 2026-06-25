@@ -1467,3 +1467,36 @@ chroma_db) out of the build context.
 Docker packages the app + its PINNED environment into a portable IMAGE that runs the same
 anywhere; the classic gotcha is that `localhost` inside a container is the container itself, so
 host services (like Ollama) are reached via host.docker.internal, not localhost.
+
+---
+
+## Lesson 020: observability - one callback at the top traces the WHOLE graph (26-Jun-2026)
+(From wiring Langfuse into the capstone.)
+
+### What tracing buys
+An LLM app is a black box - print() is crude + ephemeral. A tracing platform (Langfuse) records
+every LLM call (prompt, output, latency, tokens) AND the structure of a run, in a searchable
+dashboard. Trace = one run; Observation/Span = a step within it. Quant framing: an execution
+blotter + latency/cost analytics for your model calls.
+
+### The key mechanic: callbacks PROPAGATE down the graph
+Attach a Langfuse CallbackHandler and pass it ONCE to the top-level invoke
+(`config={"callbacks":[handler]}`). LangChain propagates it through the run via context, so EVERY
+nested call - each LangGraph node AND each agent's `llm.invoke` - is captured automatically, with
+NO per-agent wiring. One code-builder build -> a `LangGraph` root trace with the orchestrator, QA,
+coder, and judge generations nested under it (incl. the judge's "CULPRIT: tests" verdict and the
+self-heal). The whole multi-agent pipeline becomes a visible, timed, token-counted tree.
+
+### Setup gotchas (from getting it working)
+- The handler reads LANGFUSE_* from the ENVIRONMENT (langfuse 4.x), so the app must
+  `load_dotenv()` and the .env must hold the keys (gitignored - they are secrets).
+- langfuse 4.x reads `LANGFUSE_HOST`, not `LANGFUSE_BASE_URL`; a wrong name silently defaults to
+  the EU cloud (fine only if that is your region).
+- Traces flush ASYNC on a background thread - exit the program CLEANLY (not kill) so the queue
+  flushes; add `get_client().flush()` if a short script exits too fast.
+
+### One-sentence summary
+Tracing makes the agent black box visible; with LangChain/LangGraph you attach ONE Langfuse
+callback to the top-level invoke and it propagates to every node + every agent LLM call, so a
+whole multi-agent build (including the self-healing judge) shows up as a nested, timed,
+token-counted tree.

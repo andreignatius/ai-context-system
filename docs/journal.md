@@ -582,6 +582,51 @@ Lesson 019.
 Next: Langfuse trace (the last C item) - set up + wire the callback into the capstone, confirm
 a trace appears.
 
+### Change 019: Langfuse trace CONFIRMED (foundations) (26-Jun-2026)
+The long-open observability loose end is closed - no new code, just the visual confirmation (the
+handler was wired in Change 001).
+
+- Ran langgraph-app/main.py; the Langfuse dashboard (Tracing) shows 47 GENERATION observations
+  (ChatOllama) - each LLM call with its input (system + messages), output (assistant reply),
+  latency + tokens. Observable, confirmed.
+- What made it work: `CallbackHandler()` (langfuse 4.9.1, reads LANGFUSE_* from env) +
+  `load_dotenv()` in config.py + keys in langgraph-app/.env + `config={"callbacks":[handler]}`
+  on the node's llm.invoke (Change 001).
+- GOTCHA noted: .env uses LANGFUSE_BASE_URL but langfuse 4.x reads LANGFUSE_HOST - works here only
+  because the project is on the DEFAULT EU cloud; rename to LANGFUSE_HOST if ever US/self-hosted.
+- The traces are flat per-call generations (no named parent trace) - fine for confirmation.
+
+Next: wire Langfuse into the CAPSTONE (code-builder) to observe the multi-agent BUILD trace
+(orchestrator -> QA -> coder -> judge), the stronger demo.
+
+### Change 020: Capstone Langfuse wiring - the multi-agent build is OBSERVABLE; C COMPLETE (26-Jun-2026)
+The code-builder now traces every build to Langfuse. Typed by hand. Concept: Lesson 020.
+
+- `code-builder/.env` (the 3 LANGFUSE_* keys, gitignored). `config.py`: `load_dotenv()` +
+  `get_langfuse_handler()` (CallbackHandler, langfuse 4.x). `main.py`: pass
+  `config={"callbacks":[_handler]}` to `app.invoke`.
+- KEY: the callback PROPAGATES through the graph - passing it to the top-level `app.invoke`
+  captured every nested agent `llm.invoke` AND every node, no per-agent wiring. One build = a
+  `LangGraph` root trace with 20 observations (15 CHAIN nodes + 5 GENERATION LLM calls:
+  orchestrator, QA, coder, judge, QA-edit).
+- VERIFIED live: a factorial build the JUDGE self-healed (round 1 -> tests: "pytest.raises
+  without importing pytest" -> QA edit -> green) - the WHOLE self-heal visible as a tree in
+  Langfuse. (api.py gets the same one-line config later.)
+- C COMPLETE: M11 API + M12 Docker + Langfuse (foundations + capstone). Project at 10/12.
+
+### Honest status: M8 / M9 (Andre's Q, 26-Jun)
+The SPIRIT of both is covered by the sandbox; the textbook forms are genuine GAPS.
+- M8 Tools - spirit: the builder ACTS (writes solution.py/test_solution.py, EXECUTES pytest) -
+  the sandbox is a "run-code tool". GAPS: no model-driven tool-calling (LangChain
+  @tool/bind_tools/ToolNode, ReAct); our actions are HARDCODED pipeline steps, not tools the
+  LLM chooses; no external tools.
+- M9 Guardrails - spirit: the sandbox runs untrusted LLM code safely-ish (temp dir + subprocess
+  + timeout, isolated cwd); the BRAKES cap runaway loops/cost; fence-cleaning + import-guard are
+  input hygiene. GAPS: the sandbox is BASIC, not real isolation (no network/fs/privilege
+  sandboxing - a hostile model could still harm, runs as the host user); no prompt-injection
+  defense; no input/output validation or refusals; no auth/rate-limit on the API.
+So M8/M9 = PARTIAL - honest "future work", not "done".
+
 ### Next Steps
 - [x] Install LangGraph
 - [ ] Set up Langfuse (cloud or self-hosted) and confirm a trace appears   <- still open
@@ -599,7 +644,9 @@ a trace appears.
 - [x] v3+ self-healing supervisor: auto-judge routes each failure to the culprit agent (Change 016, Lesson 017)
 - [x] C / M11: FastAPI wrapper (src/api.py) - the builder is an HTTP service (Change 017)
 - [x] C / M12: containerized (Dockerfile + .dockerignore) - runs in Docker, talks to host Ollama (Change 018)
-- [ ] C: confirm a Langfuse trace (set up + wire the callback into the capstone)   <- NEXT (last C item)
+- [x] C: Langfuse trace CONFIRMED for the foundations agent (Change 019)
+- [x] wire Langfuse into the CAPSTONE -> multi-agent build trace observed (Change 020). C COMPLETE.
+- [ ] (polish/optional) README portfolio pass; per-agent models; M8 tool-calling + M9 hardening
 - [ ] restore strong QA_PROMPT for production (temp kept at 0.5 by choice; the loose QA prompt was a fixture)
 - [ ] (later) PER-AGENT models (the Lesson 016 model-ceiling fix: strong coder, terse orchestrator)
 
@@ -697,7 +744,9 @@ trace (the last loose end). Deferred: PER-AGENT models (model-quality ceiling).
 [x] 10 Tests+eval = QA tests + foundations unit tests + the M10 eval harness (src/evals.py).
 Partial: 8 Tools (code exec via sandbox, no ToolNode/ReAct), 9 Guardrails (sandbox + brake, no
 injection/validation layer). Pending: 11 API, 12 Deploy.
-Loose ends parked: Langfuse trace unconfirmed; compress token-trigger; summary/context test.
+Loose ends: Langfuse fully done - foundations (Change 019) + capstone multi-agent trace (Change
+020). C COMPLETE. Still parked: compress token-trigger; summary/context test; M8 tool-calling +
+M9 hardening (partial - see Change 020).
 
 **Milestone 0 - Foundations** (quick wins, build confidence)
 
