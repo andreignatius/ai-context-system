@@ -16,6 +16,12 @@ def run_tests(code: str, tests: str, timeout: int=30) -> dict:
     with tempfile.TemporaryDirectory() as tmp:
         tmp = Path(tmp)
         (tmp / "solution.py").write_text(code)
+
+        # GUARD: the QA often forgets to import the function under test. We OWN the filename,
+        # so enforce what the model can't reliably do (Lesson: enforce, don't ask).
+        if "from solution import" not in tests and "import solution" not in tests:
+            tests = "from solution import *\n" + tests
+            
         (tmp / "test_solution.py").write_text(tests)
 
         try:

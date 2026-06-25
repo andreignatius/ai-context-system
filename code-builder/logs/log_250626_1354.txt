@@ -1,0 +1,1660 @@
+(openwebui-env) (base) andre@Andres-MacBook-Air code-builder % python -m src.main
+
+What function should I build? please write function to check if input string is palindrome
+[plan] fresh build -> orchestrator(spec) -> QA(test_solution.py) -> coder(solution.py)
+[orchestrator] wrote spec
+[qa] wrote tests
+111===== CODER TASK (debug) =====
+SPEC:
+```markdown
+# Palindrome Checker Function
+## Function Name and Signature
+```python
+def is_palindrome(s: str) -> bool:
+    """
+    Checks if a given string is a palindrome.
+
+    Args:
+        s (str): The input string to be checked.
+
+    Returns:
+        bool: True if the string is a palindrome, False otherwise.
+    """
+```
+
+## One-line Description
+
+Checks if a given string is equal to its reverse.
+
+## Edge Cases
+
+* Empty string: raises ValueError
+* Single character string: returns True
+* String with non-alphanumeric characters: ignores non-alphanumeric characters and checks the remaining alphanumeric part of the string
+
+## Concrete Input->Output Examples
+
+* `is_palindrome("madam")` -> `True`
+* `is_palindrome("hello")` -> `False`
+* `is_palindrome("")` -> `ValueError` (raises an error)
+```
+==============================
+[coder] wrote code (attempt 1)
+[sandbox] passed: False
+[router] tests failed -> auto-retry the CODER (attempt 1/3); tests held fixed, only the code is rewritten here
+         FAILED test_solution.py::test_string_with_non_alphanumeric_characters_ignored
+111===== CODER TASK (debug) =====
+SPEC:
+```markdown
+# Palindrome Checker Function
+## Function Name and Signature
+```python
+def is_palindrome(s: str) -> bool:
+    """
+    Checks if a given string is a palindrome.
+
+    Args:
+        s (str): The input string to be checked.
+
+    Returns:
+        bool: True if the string is a palindrome, False otherwise.
+    """
+```
+
+## One-line Description
+
+Checks if a given string is equal to its reverse.
+
+## Edge Cases
+
+* Empty string: raises ValueError
+* Single character string: returns True
+* String with non-alphanumeric characters: ignores non-alphanumeric characters and checks the remaining alphanumeric part of the string
+
+## Concrete Input->Output Examples
+
+* `is_palindrome("madam")` -> `True`
+* `is_palindrome("hello")` -> `False`
+* `is_palindrome("")` -> `ValueError` (raises an error)
+```
+
+Your previous code:
+def is_palindrome(s: str) -> bool:
+    """
+    Checks if a given string is a palindrome.
+
+    Args:
+        s (str): The input string to be checked.
+
+    Returns:
+        bool: True if the string is a palindrome, False otherwise.
+    """
+    if not s:
+        raise ValueError("Input string cannot be empty")
+    cleaned_s = ''.join(filter(str.isalnum, s)).lower()
+    return cleaned_s == cleaned_s[::-1]
+
+It FAILED these tests:
+.....F                                                                   [100%]
+=================================== FAILURES ===================================
+_____________ test_string_with_non_alphanumeric_characters_ignored _____________
+
+    def test_string_with_non_alphanumeric_characters_ignored():
+>       assert is_palindrome("a123madam456") == True
+E       AssertionError: assert False == True
+E        +  where False = is_palindrome('a123madam456')
+
+test_solution.py:22: AssertionError
+=========================== short test summary info ============================
+FAILED test_solution.py::test_string_with_non_alphanumeric_characters_ignored
+1 failed, 5 passed in 0.03s
+
+Kindly fix the code so all the tests pass. Return the corrected function.
+==============================
+[coder] wrote code (attempt 2)
+[sandbox] passed: False
+[router] tests failed -> auto-retry the CODER (attempt 2/3); tests held fixed, only the code is rewritten here
+         FAILED test_solution.py::test_string_with_non_alphanumeric_characters_ignored
+111===== CODER TASK (debug) =====
+SPEC:
+```markdown
+# Palindrome Checker Function
+## Function Name and Signature
+```python
+def is_palindrome(s: str) -> bool:
+    """
+    Checks if a given string is a palindrome.
+
+    Args:
+        s (str): The input string to be checked.
+
+    Returns:
+        bool: True if the string is a palindrome, False otherwise.
+    """
+```
+
+## One-line Description
+
+Checks if a given string is equal to its reverse.
+
+## Edge Cases
+
+* Empty string: raises ValueError
+* Single character string: returns True
+* String with non-alphanumeric characters: ignores non-alphanumeric characters and checks the remaining alphanumeric part of the string
+
+## Concrete Input->Output Examples
+
+* `is_palindrome("madam")` -> `True`
+* `is_palindrome("hello")` -> `False`
+* `is_palindrome("")` -> `ValueError` (raises an error)
+```
+
+Your previous code:
+def is_palindrome(s: str) -> bool:
+    """
+    Checks if a given string is a palindrome.
+
+    Args:
+        s (str): The input string to be checked.
+
+    Returns:
+        bool: True if the string is a palindrome, False otherwise.
+    """
+    if not s:
+        raise ValueError("Input string cannot be empty")
+    cleaned_s = ''.join(filter(str.isalnum, s)).lower()
+    return cleaned_s == cleaned_s[::-1]
+
+It FAILED these tests:
+.....F                                                                   [100%]
+=================================== FAILURES ===================================
+_____________ test_string_with_non_alphanumeric_characters_ignored _____________
+
+    def test_string_with_non_alphanumeric_characters_ignored():
+>       assert is_palindrome("a123madam456") == True
+E       AssertionError: assert False == True
+E        +  where False = is_palindrome('a123madam456')
+
+test_solution.py:22: AssertionError
+=========================== short test summary info ============================
+FAILED test_solution.py::test_string_with_non_alphanumeric_characters_ignored
+1 failed, 5 passed in 0.03s
+
+Kindly fix the code so all the tests pass. Return the corrected function.
+==============================
+[coder] wrote code (attempt 3)
+[sandbox] passed: False
+[router] still red after 3 coder attempts -> GIVE UP, hand to the human
+         FAILED test_solution.py::test_string_with_non_alphanumeric_characters_ignored
+
+============================================================
+STUCK - gave up after the retry brake. What was tried:
+============================================================
+
+--- spec (orchestrator) ---
+```markdown
+# Palindrome Checker Function
+## Function Name and Signature
+```python
+def is_palindrome(s: str) -> bool:
+    """
+    Checks if a given string is a palindrome.
+
+    Args:
+        s (str): The input string to be checked.
+
+    Returns:
+        bool: True if the string is a palindrome, False otherwise.
+    """
+```
+
+## One-line Description
+
+Checks if a given string is equal to its reverse.
+
+## Edge Cases
+
+* Empty string: raises ValueError
+* Single character string: returns True
+* String with non-alphanumeric characters: ignores non-alphanumeric characters and checks the remaining alphanumeric part of the string
+
+## Concrete Input->Output Examples
+
+* `is_palindrome("madam")` -> `True`
+* `is_palindrome("hello")` -> `False`
+* `is_palindrome("")` -> `ValueError` (raises an error)
+```
+
+--- tests (qa) ---
+import pytest
+from solution import is_palindrome
+
+def test_empty_string_raises_value_error():
+    with pytest.raises(ValueError):
+        is_palindrome("")
+
+def test_single_character_string_returns_true():
+    assert is_palindrome("a") == True
+
+def test_non_alphanumeric_characters_ignored():
+    assert is_palindrome("A man, a plan, a canal: Panama") == True
+    assert is_palindrome("Was it a car or a cat I saw?") == True
+
+def test_palindrome_returns_true():
+    assert is_palindrome("madam") == True
+
+def test_non_palindrome_returns_false():
+    assert is_palindrome("hello") == False
+
+def test_string_with_non_alphanumeric_characters_ignored():
+    assert is_palindrome("a123madam456") == True
+
+--- coder attempt 1 ---
+def is_palindrome(s: str) -> bool:
+    """
+    Checks if a given string is a palindrome.
+
+    Args:
+        s (str): The input string to be checked.
+
+    Returns:
+        bool: True if the string is a palindrome, False otherwise.
+    """
+    if not s:
+        raise ValueError("Input string cannot be empty")
+    cleaned_s = ''.join(filter(str.isalnum, s)).lower()
+    return cleaned_s == cleaned_s[::-1]
+
+--- sandbox verdict ---
+passed=False
+.....F                                                                   [100%]
+=================================== FAILURES ===================================
+_____________ test_string_with_non_alphanumeric_characters_ignored _____________
+
+    def test_string_with_non_alphanumeric_characters_ignored():
+>       assert is_palindrome("a123madam456") == True
+E       AssertionError: assert False == True
+E        +  where False = is_palindrome('a123madam456')
+
+test_solution.py:22: AssertionError
+=========================== short test summary info ============================
+FAILED test_solution.py::test_string_with_non_alphanumeric_characters_ignored
+1 failed, 5 passed in 0.03s
+
+--- coder attempt 2 ---
+def is_palindrome(s: str) -> bool:
+    """
+    Checks if a given string is a palindrome.
+
+    Args:
+        s (str): The input string to be checked.
+
+    Returns:
+        bool: True if the string is a palindrome, False otherwise.
+    """
+    if not s:
+        raise ValueError("Input string cannot be empty")
+    cleaned_s = ''.join(filter(str.isalnum, s)).lower()
+    return cleaned_s == cleaned_s[::-1]
+
+--- sandbox verdict ---
+passed=False
+.....F                                                                   [100%]
+=================================== FAILURES ===================================
+_____________ test_string_with_non_alphanumeric_characters_ignored _____________
+
+    def test_string_with_non_alphanumeric_characters_ignored():
+>       assert is_palindrome("a123madam456") == True
+E       AssertionError: assert False == True
+E        +  where False = is_palindrome('a123madam456')
+
+test_solution.py:22: AssertionError
+=========================== short test summary info ============================
+FAILED test_solution.py::test_string_with_non_alphanumeric_characters_ignored
+1 failed, 5 passed in 0.03s
+
+--- coder attempt 3 ---
+def is_palindrome(s: str) -> bool:
+    """
+    Checks if a given string is a palindrome.
+
+    Args:
+        s (str): The input string to be checked.
+
+    Returns:
+        bool: True if the string is a palindrome, False otherwise.
+    """
+    if not s:
+        raise ValueError("Input string cannot be empty")
+    cleaned_s = ''.join(filter(str.isalnum, s)).lower()
+    return cleaned_s == cleaned_s[::-1]
+
+--- sandbox verdict ---
+passed=False
+.....F                                                                   [100%]
+=================================== FAILURES ===================================
+_____________ test_string_with_non_alphanumeric_characters_ignored _____________
+
+    def test_string_with_non_alphanumeric_characters_ignored():
+>       assert is_palindrome("a123madam456") == True
+E       AssertionError: assert False == True
+E        +  where False = is_palindrome('a123madam456')
+
+test_solution.py:22: AssertionError
+=========================== short test summary info ============================
+FAILED test_solution.py::test_string_with_non_alphanumeric_characters_ignored
+1 failed, 5 passed in 0.03s
+
+Fix which artifact? [spec / tests / code]  (or 'q' to abandon)
+> tests
+Feedback for this fix: test_string_with_non_alphanumeric_characters_ignored <- a123madam456 input is alphanum and it is not palindrome, it should be assert is_palindrome("a123madam456") == False
+[plan] target=TESTS -> QA edits test_solution.py, then re-run pytest (spec pinned; coder fixes solution.py only if the corrected tests expose a code bug)
+[qa] editing tests (human-directed)
+[sandbox] passed: True
+[router] all tests pass -> DONE
+
+=== spec ===
+```markdown
+# Palindrome Checker Function
+## Function Name and Signature
+```python
+def is_palindrome(s: str) -> bool:
+    """
+    Checks if a given string is a palindrome.
+
+    Args:
+        s (str): The input string to be checked.
+
+    Returns:
+        bool: True if the string is a palindrome, False otherwise.
+    """
+```
+
+## One-line Description
+
+Checks if a given string is equal to its reverse.
+
+## Edge Cases
+
+* Empty string: raises ValueError
+* Single character string: returns True
+* String with non-alphanumeric characters: ignores non-alphanumeric characters and checks the remaining alphanumeric part of the string
+
+## Concrete Input->Output Examples
+
+* `is_palindrome("madam")` -> `True`
+* `is_palindrome("hello")` -> `False`
+* `is_palindrome("")` -> `ValueError` (raises an error)
+```
+
+=== code ===
+def is_palindrome(s: str) -> bool:
+    """
+    Checks if a given string is a palindrome.
+
+    Args:
+        s (str): The input string to be checked.
+
+    Returns:
+        bool: True if the string is a palindrome, False otherwise.
+    """
+    if not s:
+        raise ValueError("Input string cannot be empty")
+    cleaned_s = ''.join(filter(str.isalnum, s)).lower()
+    return cleaned_s == cleaned_s[::-1]
+
+=== tests ===
+import pytest
+from solution import is_palindrome
+
+def test_empty_string_raises_value_error():
+    with pytest.raises(ValueError):
+        is_palindrome("")
+
+def test_single_character_string_returns_true():
+    assert is_palindrome("a") == True
+
+def test_non_alphanumeric_characters_ignored():
+    assert is_palindrome("A man, a plan, a canal: Panama") == True
+    assert is_palindrome("Was it a car or a cat I saw?") == True
+
+def test_palindrome_returns_true():
+    assert is_palindrome("madam") == True
+
+def test_non_palindrome_returns_false():
+    assert is_palindrome("hello") == False
+
+def test_string_with_non_alphanumeric_characters_ignored():
+    assert is_palindrome("a123madam456") == False
+
+=== status: ok
+
+Build succeeded.
+
+Build another? [y/N]: n
+Done.
+(openwebui-env) (base) andre@Andres-MacBook-Air code-builder % python -m src.main
+
+What function should I build? write function to check if input string is palindrome
+[plan] fresh build -> orchestrator(spec) -> QA(test_solution.py) -> coder(solution.py)
+[orchestrator] wrote spec
+[qa] wrote tests
+111===== CODER TASK (debug) =====
+SPEC:
+```markdown
+# Palindrome Checker Function
+## Function Name and Signature
+```python
+def is_palindrome(s: str) -> bool:
+    """
+    Checks if a given string is a palindrome.
+
+    Args:
+        s (str): The input string to be checked.
+
+    Returns:
+        bool: True if the string is a palindrome, False otherwise.
+    """
+```
+
+## One-line Description
+
+Checks if a given string is equal to its reverse.
+
+## Edge Cases
+- Empty string: returns True
+- Single character string: returns True
+- String with non-alphanumeric characters: raises ValueError
+- String longer than 1 character and not a palindrome: returns False
+
+## Concrete Input->Output Examples
+```python
+is_palindrome("madam")  # True
+is_palindrome("hello")   # False
+is_palindrome("")        # True
+is_palindrome("a")       # True
+try:
+    is_palindrome("!@#")
+except ValueError as e:
+    print(e)  # Invalid input. Please enter a string.
+```
+==============================
+[coder] wrote code (attempt 1)
+[sandbox] passed: False
+[router] tests failed -> auto-retry the CODER (attempt 1/3); tests held fixed, only the code is rewritten here
+         FAILED test_solution.py::test_non_alphanumeric_characters - Failed: DID NOT R...
+         FAILED test_solution.py::test_invalid_input - Failed: DID NOT RAISE ValueError
+111===== CODER TASK (debug) =====
+SPEC:
+```markdown
+# Palindrome Checker Function
+## Function Name and Signature
+```python
+def is_palindrome(s: str) -> bool:
+    """
+    Checks if a given string is a palindrome.
+
+    Args:
+        s (str): The input string to be checked.
+
+    Returns:
+        bool: True if the string is a palindrome, False otherwise.
+    """
+```
+
+## One-line Description
+
+Checks if a given string is equal to its reverse.
+
+## Edge Cases
+- Empty string: returns True
+- Single character string: returns True
+- String with non-alphanumeric characters: raises ValueError
+- String longer than 1 character and not a palindrome: returns False
+
+## Concrete Input->Output Examples
+```python
+is_palindrome("madam")  # True
+is_palindrome("hello")   # False
+is_palindrome("")        # True
+is_palindrome("a")       # True
+try:
+    is_palindrome("!@#")
+except ValueError as e:
+    print(e)  # Invalid input. Please enter a string.
+```
+
+Your previous code:
+def is_palindrome(s: str) -> bool:
+    """
+    Checks if a given string is a palindrome.
+
+    Args:
+        s (str): The input string to be checked.
+
+    Returns:
+        bool: True if the string is a palindrome, False otherwise.
+    """
+    s = ''.join(c for c in s if c.isalnum()).lower()
+    return s == s[::-1]
+
+It FAILED these tests:
+..F..F                                                                   [100%]
+=================================== FAILURES ===================================
+_______________________ test_non_alphanumeric_characters _______________________
+
+    def test_non_alphanumeric_characters():
+>       with pytest.raises(ValueError):
+E       Failed: DID NOT RAISE ValueError
+
+test_solution.py:11: Failed
+______________________________ test_invalid_input ______________________________
+
+    def test_invalid_input():
+>       with pytest.raises(ValueError):
+E       Failed: DID NOT RAISE ValueError
+
+test_solution.py:22: Failed
+=========================== short test summary info ============================
+FAILED test_solution.py::test_non_alphanumeric_characters - Failed: DID NOT R...
+FAILED test_solution.py::test_invalid_input - Failed: DID NOT RAISE ValueError
+2 failed, 4 passed in 0.03s
+
+Kindly fix the code so all the tests pass. Return the corrected function.
+==============================
+[coder] wrote code (attempt 2)
+[sandbox] passed: False
+[router] tests failed -> auto-retry the CODER (attempt 2/3); tests held fixed, only the code is rewritten here
+         FAILED test_solution.py::test_non_alphanumeric_characters - Failed: DID NOT R...
+         FAILED test_solution.py::test_invalid_input - Failed: DID NOT RAISE ValueError
+111===== CODER TASK (debug) =====
+SPEC:
+```markdown
+# Palindrome Checker Function
+## Function Name and Signature
+```python
+def is_palindrome(s: str) -> bool:
+    """
+    Checks if a given string is a palindrome.
+
+    Args:
+        s (str): The input string to be checked.
+
+    Returns:
+        bool: True if the string is a palindrome, False otherwise.
+    """
+```
+
+## One-line Description
+
+Checks if a given string is equal to its reverse.
+
+## Edge Cases
+- Empty string: returns True
+- Single character string: returns True
+- String with non-alphanumeric characters: raises ValueError
+- String longer than 1 character and not a palindrome: returns False
+
+## Concrete Input->Output Examples
+```python
+is_palindrome("madam")  # True
+is_palindrome("hello")   # False
+is_palindrome("")        # True
+is_palindrome("a")       # True
+try:
+    is_palindrome("!@#")
+except ValueError as e:
+    print(e)  # Invalid input. Please enter a string.
+```
+
+Your previous code:
+def is_palindrome(s: str) -> bool:
+    """
+    Checks if a given string is a palindrome.
+
+    Args:
+        s (str): The input string to be checked.
+
+    Returns:
+        bool: True if the string is a palindrome, False otherwise.
+    """
+    s = ''.join(c for c in s if c.isalnum()).lower()
+    return s == s[::-1]
+
+It FAILED these tests:
+..F..F                                                                   [100%]
+=================================== FAILURES ===================================
+_______________________ test_non_alphanumeric_characters _______________________
+
+    def test_non_alphanumeric_characters():
+>       with pytest.raises(ValueError):
+E       Failed: DID NOT RAISE ValueError
+
+test_solution.py:11: Failed
+______________________________ test_invalid_input ______________________________
+
+    def test_invalid_input():
+>       with pytest.raises(ValueError):
+E       Failed: DID NOT RAISE ValueError
+
+test_solution.py:22: Failed
+=========================== short test summary info ============================
+FAILED test_solution.py::test_non_alphanumeric_characters - Failed: DID NOT R...
+FAILED test_solution.py::test_invalid_input - Failed: DID NOT RAISE ValueError
+2 failed, 4 passed in 0.03s
+
+Kindly fix the code so all the tests pass. Return the corrected function.
+==============================
+[coder] wrote code (attempt 3)
+[sandbox] passed: False
+[router] still red after 3 coder attempts -> GIVE UP, hand to the human
+         FAILED test_solution.py::test_non_alphanumeric_characters - Failed: DID NOT R...
+         FAILED test_solution.py::test_invalid_input - Failed: DID NOT RAISE ValueError
+
+============================================================
+STUCK - gave up after the retry brake. What was tried:
+============================================================
+
+--- spec (orchestrator) ---
+```markdown
+# Palindrome Checker Function
+## Function Name and Signature
+```python
+def is_palindrome(s: str) -> bool:
+    """
+    Checks if a given string is a palindrome.
+
+    Args:
+        s (str): The input string to be checked.
+
+    Returns:
+        bool: True if the string is a palindrome, False otherwise.
+    """
+```
+
+## One-line Description
+
+Checks if a given string is equal to its reverse.
+
+## Edge Cases
+- Empty string: returns True
+- Single character string: returns True
+- String with non-alphanumeric characters: raises ValueError
+- String longer than 1 character and not a palindrome: returns False
+
+## Concrete Input->Output Examples
+```python
+is_palindrome("madam")  # True
+is_palindrome("hello")   # False
+is_palindrome("")        # True
+is_palindrome("a")       # True
+try:
+    is_palindrome("!@#")
+except ValueError as e:
+    print(e)  # Invalid input. Please enter a string.
+```
+
+--- tests (qa) ---
+import pytest
+from solution import is_palindrome
+
+def test_empty_string():
+    assert is_palindrome("") == True
+
+def test_single_character_string():
+    assert is_palindrome("a") == True
+
+def test_non_alphanumeric_characters():
+    with pytest.raises(ValueError):
+        is_palindrome("!@#")
+
+def test_longer_than_one_character_not_palindrome():
+    assert is_palindrome("hello") == False
+
+def test_palindrome():
+    assert is_palindrome("madam") == True
+
+try:
+    def test_invalid_input():
+        with pytest.raises(ValueError):
+            is_palindrome("!@#")
+except ValueError as e:
+    print(e)  # Invalid input. Please enter a string.
+
+--- coder attempt 1 ---
+def is_palindrome(s: str) -> bool:
+    """
+    Checks if a given string is a palindrome.
+
+    Args:
+        s (str): The input string to be checked.
+
+    Returns:
+        bool: True if the string is a palindrome, False otherwise.
+    """
+    s = ''.join(c for c in s if c.isalnum()).lower()
+    return s == s[::-1]
+
+--- sandbox verdict ---
+passed=False
+..F..F                                                                   [100%]
+=================================== FAILURES ===================================
+_______________________ test_non_alphanumeric_characters _______________________
+
+    def test_non_alphanumeric_characters():
+>       with pytest.raises(ValueError):
+E       Failed: DID NOT RAISE ValueError
+
+test_solution.py:11: Failed
+______________________________ test_invalid_input ______________________________
+
+    def test_invalid_input():
+>       with pytest.raises(ValueError):
+E       Failed: DID NOT RAISE ValueError
+
+test_solution.py:22: Failed
+=========================== short test summary info ============================
+FAILED test_solution.py::test_non_alphanumeric_characters - Failed: DID NOT R...
+FAILED
+
+--- coder attempt 2 ---
+def is_palindrome(s: str) -> bool:
+    """
+    Checks if a given string is a palindrome.
+
+    Args:
+        s (str): The input string to be checked.
+
+    Returns:
+        bool: True if the string is a palindrome, False otherwise.
+    """
+    s = ''.join(c for c in s if c.isalnum()).lower()
+    return s == s[::-1]
+
+--- sandbox verdict ---
+passed=False
+..F..F                                                                   [100%]
+=================================== FAILURES ===================================
+_______________________ test_non_alphanumeric_characters _______________________
+
+    def test_non_alphanumeric_characters():
+>       with pytest.raises(ValueError):
+E       Failed: DID NOT RAISE ValueError
+
+test_solution.py:11: Failed
+______________________________ test_invalid_input ______________________________
+
+    def test_invalid_input():
+>       with pytest.raises(ValueError):
+E       Failed: DID NOT RAISE ValueError
+
+test_solution.py:22: Failed
+=========================== short test summary info ============================
+FAILED test_solution.py::test_non_alphanumeric_characters - Failed: DID NOT R...
+FAILED
+
+--- coder attempt 3 ---
+def is_palindrome(s: str) -> bool:
+    """
+    Checks if a given string is a palindrome.
+
+    Args:
+        s (str): The input string to be checked.
+
+    Returns:
+        bool: True if the string is a palindrome, False otherwise.
+    """
+    s = ''.join(c for c in s if c.isalnum()).lower()
+    return s == s[::-1]
+
+--- sandbox verdict ---
+passed=False
+..F..F                                                                   [100%]
+=================================== FAILURES ===================================
+_______________________ test_non_alphanumeric_characters _______________________
+
+    def test_non_alphanumeric_characters():
+>       with pytest.raises(ValueError):
+E       Failed: DID NOT RAISE ValueError
+
+test_solution.py:11: Failed
+______________________________ test_invalid_input ______________________________
+
+    def test_invalid_input():
+>       with pytest.raises(ValueError):
+E       Failed: DID NOT RAISE ValueError
+
+test_solution.py:22: Failed
+=========================== short test summary info ============================
+FAILED test_solution.py::test_non_alphanumeric_characters - Failed: DID NOT R...
+FAILED
+
+Fix which artifact? [spec / tests / code]  (or 'q' to abandon)
+> code
+Feedback for this fix: code does not raise ValueError when input string has non alphanum characters
+[plan] target=CODE -> coder edits solution.py (spec + tests pinned)
+111===== CODER TASK (debug) =====
+SPEC:
+```markdown
+# Palindrome Checker Function
+## Function Name and Signature
+```python
+def is_palindrome(s: str) -> bool:
+    """
+    Checks if a given string is a palindrome.
+
+    Args:
+        s (str): The input string to be checked.
+
+    Returns:
+        bool: True if the string is a palindrome, False otherwise.
+    """
+```
+
+## One-line Description
+
+Checks if a given string is equal to its reverse.
+
+## Edge Cases
+- Empty string: returns True
+- Single character string: returns True
+- String with non-alphanumeric characters: raises ValueError
+- String longer than 1 character and not a palindrome: returns False
+
+## Concrete Input->Output Examples
+```python
+is_palindrome("madam")  # True
+is_palindrome("hello")   # False
+is_palindrome("")        # True
+is_palindrome("a")       # True
+try:
+    is_palindrome("!@#")
+except ValueError as e:
+    print(e)  # Invalid input. Please enter a string.
+```
+
+Your previous code:
+def is_palindrome(s: str) -> bool:
+    """
+    Checks if a given string is a palindrome.
+
+    Args:
+        s (str): The input string to be checked.
+
+    Returns:
+        bool: True if the string is a palindrome, False otherwise.
+    """
+    s = ''.join(c for c in s if c.isalnum()).lower()
+    return s == s[::-1]
+
+It FAILED these tests:
+..F..F                                                                   [100%]
+=================================== FAILURES ===================================
+_______________________ test_non_alphanumeric_characters _______________________
+
+    def test_non_alphanumeric_characters():
+>       with pytest.raises(ValueError):
+E       Failed: DID NOT RAISE ValueError
+
+test_solution.py:11: Failed
+______________________________ test_invalid_input ______________________________
+
+    def test_invalid_input():
+>       with pytest.raises(ValueError):
+E       Failed: DID NOT RAISE ValueError
+
+test_solution.py:22: Failed
+=========================== short test summary info ============================
+FAILED test_solution.py::test_non_alphanumeric_characters - Failed: DID NOT R...
+FAILED test_solution.py::test_invalid_input - Failed: DID NOT RAISE ValueError
+2 failed, 4 passed in 0.03s
+
+Kindly fix the code so all the tests pass. Return the corrected function.
+
+A human reviewer says, specifically about the CODE:
+code does not raise ValueError when input string has non alphanum characters
+Apply this.
+==============================
+[coder] wrote code (attempt 1)
+[sandbox] passed: False
+[router] tests failed -> auto-retry the CODER (attempt 1/3); tests held fixed, only the code is rewritten here
+         FAILED test_solution.py::test_non_alphanumeric_characters - Failed: DID NOT R...
+         FAILED test_solution.py::test_invalid_input - Failed: DID NOT RAISE ValueError
+111===== CODER TASK (debug) =====
+SPEC:
+```markdown
+# Palindrome Checker Function
+## Function Name and Signature
+```python
+def is_palindrome(s: str) -> bool:
+    """
+    Checks if a given string is a palindrome.
+
+    Args:
+        s (str): The input string to be checked.
+
+    Returns:
+        bool: True if the string is a palindrome, False otherwise.
+    """
+```
+
+## One-line Description
+
+Checks if a given string is equal to its reverse.
+
+## Edge Cases
+- Empty string: returns True
+- Single character string: returns True
+- String with non-alphanumeric characters: raises ValueError
+- String longer than 1 character and not a palindrome: returns False
+
+## Concrete Input->Output Examples
+```python
+is_palindrome("madam")  # True
+is_palindrome("hello")   # False
+is_palindrome("")        # True
+is_palindrome("a")       # True
+try:
+    is_palindrome("!@#")
+except ValueError as e:
+    print(e)  # Invalid input. Please enter a string.
+```
+
+Your previous code:
+def is_palindrome(s: str) -> bool:
+    """
+    Checks if a given string is a palindrome.
+
+    Args:
+        s (str): The input string to be checked.
+
+    Returns:
+        bool: True if the string is a palindrome, False otherwise.
+    """
+    s = ''.join(c for c in s if c.isalnum()).lower()
+    return s == s[::-1]
+
+It FAILED these tests:
+..F..F                                                                   [100%]
+=================================== FAILURES ===================================
+_______________________ test_non_alphanumeric_characters _______________________
+
+    def test_non_alphanumeric_characters():
+>       with pytest.raises(ValueError):
+E       Failed: DID NOT RAISE ValueError
+
+test_solution.py:11: Failed
+______________________________ test_invalid_input ______________________________
+
+    def test_invalid_input():
+>       with pytest.raises(ValueError):
+E       Failed: DID NOT RAISE ValueError
+
+test_solution.py:22: Failed
+=========================== short test summary info ============================
+FAILED test_solution.py::test_non_alphanumeric_characters - Failed: DID NOT R...
+FAILED test_solution.py::test_invalid_input - Failed: DID NOT RAISE ValueError
+2 failed, 4 passed in 0.04s
+
+Kindly fix the code so all the tests pass. Return the corrected function.
+
+A human reviewer says, specifically about the CODE:
+code does not raise ValueError when input string has non alphanum characters
+Apply this.
+==============================
+[coder] wrote code (attempt 2)
+[sandbox] passed: False
+[router] tests failed -> auto-retry the CODER (attempt 2/3); tests held fixed, only the code is rewritten here
+         FAILED test_solution.py::test_non_alphanumeric_characters - Failed: DID NOT R...
+         FAILED test_solution.py::test_invalid_input - Failed: DID NOT RAISE ValueError
+111===== CODER TASK (debug) =====
+SPEC:
+```markdown
+# Palindrome Checker Function
+## Function Name and Signature
+```python
+def is_palindrome(s: str) -> bool:
+    """
+    Checks if a given string is a palindrome.
+
+    Args:
+        s (str): The input string to be checked.
+
+    Returns:
+        bool: True if the string is a palindrome, False otherwise.
+    """
+```
+
+## One-line Description
+
+Checks if a given string is equal to its reverse.
+
+## Edge Cases
+- Empty string: returns True
+- Single character string: returns True
+- String with non-alphanumeric characters: raises ValueError
+- String longer than 1 character and not a palindrome: returns False
+
+## Concrete Input->Output Examples
+```python
+is_palindrome("madam")  # True
+is_palindrome("hello")   # False
+is_palindrome("")        # True
+is_palindrome("a")       # True
+try:
+    is_palindrome("!@#")
+except ValueError as e:
+    print(e)  # Invalid input. Please enter a string.
+```
+
+Your previous code:
+def is_palindrome(s: str) -> bool:
+    """
+    Checks if a given string is a palindrome.
+
+    Args:
+        s (str): The input string to be checked.
+
+    Returns:
+        bool: True if the string is a palindrome, False otherwise.
+    """
+    s = ''.join(c for c in s if c.isalnum()).lower()
+    if not s:
+        return True
+    return s == s[::-1]
+
+It FAILED these tests:
+..F..F                                                                   [100%]
+=================================== FAILURES ===================================
+_______________________ test_non_alphanumeric_characters _______________________
+
+    def test_non_alphanumeric_characters():
+>       with pytest.raises(ValueError):
+E       Failed: DID NOT RAISE ValueError
+
+test_solution.py:11: Failed
+______________________________ test_invalid_input ______________________________
+
+    def test_invalid_input():
+>       with pytest.raises(ValueError):
+E       Failed: DID NOT RAISE ValueError
+
+test_solution.py:22: Failed
+=========================== short test summary info ============================
+FAILED test_solution.py::test_non_alphanumeric_characters - Failed: DID NOT R...
+FAILED test_solution.py::test_invalid_input - Failed: DID NOT RAISE ValueError
+2 failed, 4 passed in 0.03s
+
+Kindly fix the code so all the tests pass. Return the corrected function.
+
+A human reviewer says, specifically about the CODE:
+code does not raise ValueError when input string has non alphanum characters
+Apply this.
+==============================
+[coder] wrote code (attempt 3)
+[sandbox] passed: False
+[router] still red after 3 coder attempts -> GIVE UP, hand to the human
+         FAILED test_solution.py::test_non_alphanumeric_characters - Failed: DID NOT R...
+         FAILED test_solution.py::test_invalid_input - Failed: DID NOT RAISE ValueError
+
+============================================================
+STUCK - gave up after the retry brake. What was tried:
+============================================================
+
+--- coder attempt 1 ---
+def is_palindrome(s: str) -> bool:
+    """
+    Checks if a given string is a palindrome.
+
+    Args:
+        s (str): The input string to be checked.
+
+    Returns:
+        bool: True if the string is a palindrome, False otherwise.
+    """
+    s = ''.join(c for c in s if c.isalnum()).lower()
+    return s == s[::-1]
+
+--- sandbox verdict ---
+passed=False
+..F..F                                                                   [100%]
+=================================== FAILURES ===================================
+_______________________ test_non_alphanumeric_characters _______________________
+
+    def test_non_alphanumeric_characters():
+>       with pytest.raises(ValueError):
+E       Failed: DID NOT RAISE ValueError
+
+test_solution.py:11: Failed
+______________________________ test_invalid_input ______________________________
+
+    def test_invalid_input():
+>       with pytest.raises(ValueError):
+E       Failed: DID NOT RAISE ValueError
+
+test_solution.py:22: Failed
+=========================== short test summary info ============================
+FAILED test_solution.py::test_non_alphanumeric_characters - Failed: DID NOT R...
+FAILED
+
+--- coder attempt 2 ---
+def is_palindrome(s: str) -> bool:
+    """
+    Checks if a given string is a palindrome.
+
+    Args:
+        s (str): The input string to be checked.
+
+    Returns:
+        bool: True if the string is a palindrome, False otherwise.
+    """
+    s = ''.join(c for c in s if c.isalnum()).lower()
+    if not s:
+        return True
+    return s == s[::-1]
+
+--- sandbox verdict ---
+passed=False
+..F..F                                                                   [100%]
+=================================== FAILURES ===================================
+_______________________ test_non_alphanumeric_characters _______________________
+
+    def test_non_alphanumeric_characters():
+>       with pytest.raises(ValueError):
+E       Failed: DID NOT RAISE ValueError
+
+test_solution.py:11: Failed
+______________________________ test_invalid_input ______________________________
+
+    def test_invalid_input():
+>       with pytest.raises(ValueError):
+E       Failed: DID NOT RAISE ValueError
+
+test_solution.py:22: Failed
+=========================== short test summary info ============================
+FAILED test_solution.py::test_non_alphanumeric_characters - Failed: DID NOT R...
+FAILED
+
+--- coder attempt 3 ---
+def is_palindrome(s: str) -> bool:
+    """
+    Checks if a given string is a palindrome.
+
+    Args:
+        s (str): The input string to be checked.
+
+    Returns:
+        bool: True if the string is a palindrome, False otherwise.
+    """
+    s = ''.join(c for c in s if c.isalnum()).lower()
+    if not s:
+        return True
+    if len(s) == 1:
+        return True
+    return s == s[::-1]
+
+--- sandbox verdict ---
+passed=False
+..F..F                                                                   [100%]
+=================================== FAILURES ===================================
+_______________________ test_non_alphanumeric_characters _______________________
+
+    def test_non_alphanumeric_characters():
+>       with pytest.raises(ValueError):
+E       Failed: DID NOT RAISE ValueError
+
+test_solution.py:11: Failed
+______________________________ test_invalid_input ______________________________
+
+    def test_invalid_input():
+>       with pytest.raises(ValueError):
+E       Failed: DID NOT RAISE ValueError
+
+test_solution.py:22: Failed
+=========================== short test summary info ============================
+FAILED test_solution.py::test_non_alphanumeric_characters - Failed: DID NOT R...
+FAILED
+
+Fix which artifact? [spec / tests / code]  (or 'q' to abandon)
+> code
+Feedback for this fix: please raise ValueError when input string has non alphanum characters
+[plan] target=CODE -> coder edits solution.py (spec + tests pinned)
+111===== CODER TASK (debug) =====
+SPEC:
+```markdown
+# Palindrome Checker Function
+## Function Name and Signature
+```python
+def is_palindrome(s: str) -> bool:
+    """
+    Checks if a given string is a palindrome.
+
+    Args:
+        s (str): The input string to be checked.
+
+    Returns:
+        bool: True if the string is a palindrome, False otherwise.
+    """
+```
+
+## One-line Description
+
+Checks if a given string is equal to its reverse.
+
+## Edge Cases
+- Empty string: returns True
+- Single character string: returns True
+- String with non-alphanumeric characters: raises ValueError
+- String longer than 1 character and not a palindrome: returns False
+
+## Concrete Input->Output Examples
+```python
+is_palindrome("madam")  # True
+is_palindrome("hello")   # False
+is_palindrome("")        # True
+is_palindrome("a")       # True
+try:
+    is_palindrome("!@#")
+except ValueError as e:
+    print(e)  # Invalid input. Please enter a string.
+```
+
+Your previous code:
+def is_palindrome(s: str) -> bool:
+    """
+    Checks if a given string is a palindrome.
+
+    Args:
+        s (str): The input string to be checked.
+
+    Returns:
+        bool: True if the string is a palindrome, False otherwise.
+    """
+    s = ''.join(c for c in s if c.isalnum()).lower()
+    if not s:
+        return True
+    if len(s) == 1:
+        return True
+    return s == s[::-1]
+
+It FAILED these tests:
+..F..F                                                                   [100%]
+=================================== FAILURES ===================================
+_______________________ test_non_alphanumeric_characters _______________________
+
+    def test_non_alphanumeric_characters():
+>       with pytest.raises(ValueError):
+E       Failed: DID NOT RAISE ValueError
+
+test_solution.py:11: Failed
+______________________________ test_invalid_input ______________________________
+
+    def test_invalid_input():
+>       with pytest.raises(ValueError):
+E       Failed: DID NOT RAISE ValueError
+
+test_solution.py:22: Failed
+=========================== short test summary info ============================
+FAILED test_solution.py::test_non_alphanumeric_characters - Failed: DID NOT R...
+FAILED test_solution.py::test_invalid_input - Failed: DID NOT RAISE ValueError
+2 failed, 4 passed in 0.03s
+
+Kindly fix the code so all the tests pass. Return the corrected function.
+
+A human reviewer says, specifically about the CODE:
+please raise ValueError when input string has non alphanum characters
+Apply this.
+==============================
+[coder] wrote code (attempt 1)
+[sandbox] passed: False
+[router] tests failed -> auto-retry the CODER (attempt 1/3); tests held fixed, only the code is rewritten here
+         FAILED test_solution.py::test_non_alphanumeric_characters - Failed: DID NOT R...
+         FAILED test_solution.py::test_longer_than_one_character_not_palindrome - Valu...
+         FAILED test_solution.py::test_palindrome - AssertionError: assert False == True
+         FAILED test_solution.py::test_invalid_input - Failed: DID NOT RAISE ValueError
+111===== CODER TASK (debug) =====
+SPEC:
+```markdown
+# Palindrome Checker Function
+## Function Name and Signature
+```python
+def is_palindrome(s: str) -> bool:
+    """
+    Checks if a given string is a palindrome.
+
+    Args:
+        s (str): The input string to be checked.
+
+    Returns:
+        bool: True if the string is a palindrome, False otherwise.
+    """
+```
+
+## One-line Description
+
+Checks if a given string is equal to its reverse.
+
+## Edge Cases
+- Empty string: returns True
+- Single character string: returns True
+- String with non-alphanumeric characters: raises ValueError
+- String longer than 1 character and not a palindrome: returns False
+
+## Concrete Input->Output Examples
+```python
+is_palindrome("madam")  # True
+is_palindrome("hello")   # False
+is_palindrome("")        # True
+is_palindrome("a")       # True
+try:
+    is_palindrome("!@#")
+except ValueError as e:
+    print(e)  # Invalid input. Please enter a string.
+```
+
+Your previous code:
+def is_palindrome(s: str) -> bool:
+    """
+    Checks if a given string is a palindrome.
+
+    Args:
+        s (str): The input string to be checked.
+
+    Returns:
+        bool: True if the string is a palindrome, False otherwise.
+    """
+    s = ''.join(c for c in s if c.isalnum()).lower()
+    if not s:
+        return True
+    if len(s) == 1:
+        return True
+    if s != s[::-1]:
+        raise ValueError("Invalid input. Please enter a string.")
+    return False
+
+It FAILED these tests:
+..FFFF                                                                   [100%]
+=================================== FAILURES ===================================
+_______________________ test_non_alphanumeric_characters _______________________
+
+    def test_non_alphanumeric_characters():
+>       with pytest.raises(ValueError):
+E       Failed: DID NOT RAISE ValueError
+
+test_solution.py:11: Failed
+________________ test_longer_than_one_character_not_palindrome _________________
+
+    def test_longer_than_one_character_not_palindrome():
+>       assert is_palindrome("hello") == False
+               ^^^^^^^^^^^^^^^^^^^^^^
+
+test_solution.py:15: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+s = 'hello'
+
+    def is_palindrome(s: str) -> bool:
+        """
+        Checks if a given string is a palindrome.
+    
+        Args:
+            s (str): The input string to be checked.
+    
+        Returns:
+            bool: True if the string is a palindrome, False otherwise.
+        """
+        s = ''.join(c for c in s if c.isalnum()).lower()
+        if not s:
+            return True
+        if len(s) == 1:
+            return True
+        if s != s[::-1]:
+>           raise ValueError("Invalid input. Please enter a string.")
+E           ValueError: Invalid input. Please enter a string.
+
+solution.py:17: ValueError
+_______________________________ test_palindrome ________________________________
+
+    def test_palindrome():
+>       assert is_palindrome("madam") == True
+E       AssertionError: assert False == True
+E        +  where False = is_palindrome('madam')
+
+test_solution.py:18: AssertionError
+______________________________ test_invalid_input ______________________________
+
+    def test_invalid_input():
+>       with pytest.raises(ValueError):
+E       Failed: DID NOT RAISE ValueError
+
+test_solution.py:22: Failed
+=========================== short test summary info ============================
+FAILED test_solution.py::test_non_alphanumeric_characters - Failed: DID NOT R...
+FAILED test_solution.py::test_longer_than_one_character_not_palindrome - Valu...
+FAILED test_solution.py::test_palindrome - AssertionError: assert False == True
+FAILED test_solution.py::test_invalid_input - Failed: DID NOT RAISE ValueError
+4 failed, 2 passed in 0.03s
+
+Kindly fix the code so all the tests pass. Return the corrected function.
+
+A human reviewer says, specifically about the CODE:
+please raise ValueError when input string has non alphanum characters
+Apply this.
+==============================
+[coder] wrote code (attempt 2)
+[sandbox] passed: False
+[router] tests failed -> auto-retry the CODER (attempt 2/3); tests held fixed, only the code is rewritten here
+         FAILED test_solution.py::test_non_alphanumeric_characters - Failed: DID NOT R...
+         FAILED test_solution.py::test_invalid_input - Failed: DID NOT RAISE ValueError
+111===== CODER TASK (debug) =====
+SPEC:
+```markdown
+# Palindrome Checker Function
+## Function Name and Signature
+```python
+def is_palindrome(s: str) -> bool:
+    """
+    Checks if a given string is a palindrome.
+
+    Args:
+        s (str): The input string to be checked.
+
+    Returns:
+        bool: True if the string is a palindrome, False otherwise.
+    """
+```
+
+## One-line Description
+
+Checks if a given string is equal to its reverse.
+
+## Edge Cases
+- Empty string: returns True
+- Single character string: returns True
+- String with non-alphanumeric characters: raises ValueError
+- String longer than 1 character and not a palindrome: returns False
+
+## Concrete Input->Output Examples
+```python
+is_palindrome("madam")  # True
+is_palindrome("hello")   # False
+is_palindrome("")        # True
+is_palindrome("a")       # True
+try:
+    is_palindrome("!@#")
+except ValueError as e:
+    print(e)  # Invalid input. Please enter a string.
+```
+
+Your previous code:
+def is_palindrome(s: str) -> bool:
+    """
+    Checks if a given string is a palindrome.
+
+    Args:
+        s (str): The input string to be checked.
+
+    Returns:
+        bool: True if the string is a palindrome, False otherwise.
+    """
+    s = ''.join(c for c in s if c.isalnum()).lower()
+    return s == s[::-1]
+
+It FAILED these tests:
+..F..F                                                                   [100%]
+=================================== FAILURES ===================================
+_______________________ test_non_alphanumeric_characters _______________________
+
+    def test_non_alphanumeric_characters():
+>       with pytest.raises(ValueError):
+E       Failed: DID NOT RAISE ValueError
+
+test_solution.py:11: Failed
+______________________________ test_invalid_input ______________________________
+
+    def test_invalid_input():
+>       with pytest.raises(ValueError):
+E       Failed: DID NOT RAISE ValueError
+
+test_solution.py:22: Failed
+=========================== short test summary info ============================
+FAILED test_solution.py::test_non_alphanumeric_characters - Failed: DID NOT R...
+FAILED test_solution.py::test_invalid_input - Failed: DID NOT RAISE ValueError
+2 failed, 4 passed in 0.03s
+
+Kindly fix the code so all the tests pass. Return the corrected function.
+
+A human reviewer says, specifically about the CODE:
+please raise ValueError when input string has non alphanum characters
+Apply this.
+==============================
+[coder] wrote code (attempt 3)
+[sandbox] passed: False
+[router] still red after 3 coder attempts -> GIVE UP, hand to the human
+         FAILED test_solution.py::test_non_alphanumeric_characters - Failed: DID NOT R...
+         FAILED test_solution.py::test_invalid_input - Failed: DID NOT RAISE ValueError
+
+============================================================
+STUCK - gave up after the retry brake. What was tried:
+============================================================
+
+--- coder attempt 1 ---
+def is_palindrome(s: str) -> bool:
+    """
+    Checks if a given string is a palindrome.
+
+    Args:
+        s (str): The input string to be checked.
+
+    Returns:
+        bool: True if the string is a palindrome, False otherwise.
+    """
+    s = ''.join(c for c in s if c.isalnum()).lower()
+    if not s:
+        return True
+    if len(s) == 1:
+        return True
+    if s != s[::-1]:
+        raise ValueError("Invalid input. Please enter a string.")
+    return False
+
+--- sandbox verdict ---
+passed=False
+..FFFF                                                                   [100%]
+=================================== FAILURES ===================================
+_______________________ test_non_alphanumeric_characters _______________________
+
+    def test_non_alphanumeric_characters():
+>       with pytest.raises(ValueError):
+E       Failed: DID NOT RAISE ValueError
+
+test_solution.py:11: Failed
+________________ test_longer_than_one_character_not_palindrome _________________
+
+    def test_longer_than_one_character_not_palindrome():
+>       assert is_palindrome("hello") == False
+               ^^^^^^^^^^^^^^^^^^^^^^
+
+test_solution.py:15: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+s = 'hello'
+
+    def is_palindrome(s: str) -> bool:
+        "
+
+--- coder attempt 2 ---
+def is_palindrome(s: str) -> bool:
+    """
+    Checks if a given string is a palindrome.
+
+    Args:
+        s (str): The input string to be checked.
+
+    Returns:
+        bool: True if the string is a palindrome, False otherwise.
+    """
+    s = ''.join(c for c in s if c.isalnum()).lower()
+    return s == s[::-1]
+
+--- sandbox verdict ---
+passed=False
+..F..F                                                                   [100%]
+=================================== FAILURES ===================================
+_______________________ test_non_alphanumeric_characters _______________________
+
+    def test_non_alphanumeric_characters():
+>       with pytest.raises(ValueError):
+E       Failed: DID NOT RAISE ValueError
+
+test_solution.py:11: Failed
+______________________________ test_invalid_input ______________________________
+
+    def test_invalid_input():
+>       with pytest.raises(ValueError):
+E       Failed: DID NOT RAISE ValueError
+
+test_solution.py:22: Failed
+=========================== short test summary info ============================
+FAILED test_solution.py::test_non_alphanumeric_characters - Failed: DID NOT R...
+FAILED
+
+--- coder attempt 3 ---
+def is_palindrome(s: str) -> bool:
+    """
+    Checks if a given string is a palindrome.
+
+    Args:
+        s (str): The input string to be checked.
+
+    Returns:
+        bool: True if the string is a palindrome, False otherwise.
+    """
+    s = ''.join(c for c in s if c.isalnum()).lower()
+    return s == s[::-1]
+
+--- sandbox verdict ---
+passed=False
+..F..F                                                                   [100%]
+=================================== FAILURES ===================================
+_______________________ test_non_alphanumeric_characters _______________________
+
+    def test_non_alphanumeric_characters():
+>       with pytest.raises(ValueError):
+E       Failed: DID NOT RAISE ValueError
+
+test_solution.py:11: Failed
+______________________________ test_invalid_input ______________________________
+
+    def test_invalid_input():
+>       with pytest.raises(ValueError):
+E       Failed: DID NOT RAISE ValueError
+
+test_solution.py:22: Failed
+=========================== short test summary info ============================
+FAILED test_solution.py::test_non_alphanumeric_characters - Failed: DID NOT R...
+FAILED
+
+Fix which artifact? [spec / tests / code]  (or 'q' to abandon)
+> 

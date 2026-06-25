@@ -345,13 +345,220 @@ Scaffolded the code-builder capstone and built its three ISOLATED-context agents
 - RELATIVE imports (`from .config`) need `python -m src.agents`, not `python agents.py`.
 - Build slips: string-literal "ORCHESTRATOR_PROMPT", missing comma, print-without-payload.
 
+### Change 010: Capstone v1 LOCKED - sequential graph + user input (24-Jun-2026)
+v1 (crawl) complete: a sequential multi-agent code-builder, wired as a LangGraph graph,
+taking a USER request and producing tested code with an objective verdict.
+
+- `src/graph.py` - `build_graph()`: nodes write_spec -> write_code -> write_tests ->
+  run_sandbox -> END (run_sandbox is a non-LLM node wrapping the pytest runner; the 3 LLM
+  agents are already graph nodes - state -> dict). Plain sequential edges, no checkpointer.
+- `main.py` - entry point: request via `input()` (user-driven, with a default fallback),
+  `app.invoke({"request": ...})`, prints spec/code/tests/status from the FINAL state.
+- INSIGHT: `invoke()` returns the accumulated FINAL STATE, which holds EVERY artifact each
+  node wrote (request/spec/code/tests/test_result/status) - no need to capture step-by-step
+  like the manual chain. BuilderState collects them; the graph hands you one object. (This
+  also justified the graph over manual chaining - v2's fix-LOOP is one conditional edge,
+  vs a hand-rolled while-loop. Lesson 007: a loop is a conditional edge pointing back.)
+- Verified live: typed "please write function to check if string is palindrome" ->
+  spec -> code (`return s == s[::-1]`) -> tests -> sandbox -> passed: True, status: ok.
+
+v1 = crawl DONE. Next: v2 (walk) - the fix-loop (QA fails -> coder iterates) via a
+conditional edge + max-iteration brake + user intervention when stuck.
+
+### Change 011: Capstone v2 - fix-loop wired (25-Jun-2026)
+The coder now ITERATES on test failures (the orchestration loop) with a brake. Typed by hand.
+
+- `state.py`: added `attempts: int`. `config.py`: `MAX_ATTEMPTS=3` (env-overridable) = the brake.
+- `agents.py`: write_code is now RETRY-AWARE - on a retry it gets spec + its previous code +
+  the failures, increments `attempts`, returns {code, attempts}. (Failures flow
+  run_sandbox -> state -> write_code: the feedback path that makes the loop converge.)
+- `graph.py`: REORDERED to write_spec -> write_tests -> write_code -> run_sandbox (tests
+  FIRST = TDD, fixed target), then a conditional edge `route_after_tests`:
+  passed -> done(END); failed & attempts>=MAX -> done (give up); else -> retry(write_code).
+  The conditional edge pointing BACK to write_code IS the loop (Lesson 007). v2 was one
+  router + one conditional edge + a reorder - NOT a rewrite. The graph investment paid off.
+- Bug caught (the recurring "computed but not wired to output" pattern): write_code built
+  `task` and `attempts` but still passed `state["spec"]` and returned only `{code}` - fixed
+  to pass `task` and return `attempts`.
+
+Agreed plan: 1) test the loop (trigger a retry); 2) add user-intervention on stuck (the last
+v2 piece - currently "give up" just logs + ENDs + reports failure, no interactive ask);
+3) add a while True (multi-build) + maybe a checkpointer.
+Design note: the builder is a ONE-SHOT TASK (run-to-completion), not a conversation - so the
+while-loop + checkpointer are OPTIONAL enhancements, not required. (See Lesson 012.)
+
+### Change 012: Capstone v2 - tested the loop; the debug saga (25-Jun-2026)
+Step 1 of the v2 plan DONE: ran the builder on "int -> roman numeral" to trigger a retry.
+What the 3 live runs ACTUALLY verified (Andre's catch - the first draft overclaimed): the
+loop's PLUMBING only - retry fires, `attempts` increments, the brake stops at MAX_ATTEMPTS.
+They did NOT verify the loop's VALUE (a coder taking a real failure and converging
+red -> green): runs 1-2 fed it unfixable/mis-routed bugs, run 3 one-shot (the loop never
+engaged). It took 3 runs to go green, and EVERY failure was UPSTREAM of the coder - the
+coder's code was correct on all 3 runs.
+The VALUE was proven SEPARATELY with a deterministic test (check_fixloop.py): plant a known
+buggy solution + good tests, drive the retry branch directly -> the coder read the logs and
+fixed it (planted False -> True, even added n<2 + sqrt). Plumbing verified live; convergence
+verified by the planted-bug test. (See Lesson 013, esp. Lesson D: validating a loop means
+separating "the wiring runs" from "the wiring produces value".)
+
+- Run 1 (red, gave up at 3): (a) the SPEC hallucinated an out-of-range edge case
+  `0 -> ''` that contradicts the "1..3999" range; (b) the QA used `pytest.raises` but never
+  wrote `import pytest` - the test file would not even load.
+- Run 2 (red, gave up at 3): fixes a+b worked (spec consistent, `import pytest` present),
+  but the QA found new ways to break the file: (c) no `from solution import int_to_roman`
+  (NameError); (d) it QUOTED the call - `assert 'int_to_roman(1)' == 'I'` (compares text).
+- Run 3 (GREEN on attempt 1): genuine pass - 0/4000 raise ValueError, 3.14 raises TypeError,
+  numerals correct.
+
+3 prompt fixes, ALL upstream (orchestrator + QA), NONE to the coder:
+- orchestrator: edge cases MUST be consistent with the input range (no invented
+  out-of-range return values).
+- QA: include EVERY import; imperative "Begin the file with `import pytest` +
+  `from solution import <fn>`"; plus a POSITIVE assertion example.
+
+Findings (-> Lesson 013):
+- "red != broken code" - a red verdict is only as trustworthy as the spec + the harness.
+  Here the harness author (QA) was the weak link: writing a RUNNABLE test file is
+  structurally harder than the function (one bad import/typo fails the whole suite to load).
+- weak-verb bug: "Assume `from solution import`" was read as "may assume it's available";
+  "Begin the file with ..." fixed it. Imperatives + positive examples beat
+  assumptions/negatives (the positive-prompt rule, confirmed a 3rd time).
+- coverage still light (no big composite like 3999 -> MMMCMXCIX) = Lesson 011 still lurks.
+
+Next: step 2 (user-intervention on stuck), then step 3 (while-True multi-build).
+
+### Design note: v2 plan refined - the build ledger + decidable routing (25-Jun-2026)
+A discussion (no code yet) that reshaped the v2 roadmap. Full design in capstone.md; concept
+in Lesson 013 (+ its decidability addendum). The key moves:
+- BUILD LEDGER (Andre's idea): a state field recording who-wrote-what-and-what-resulted, so a
+  failure traces to its author. In v2 it fuels a TRUTHFUL stuck-report to the HUMAN (the
+  current state OVERWRITES code/test_result each retry, losing the per-attempt trajectory -
+  the ledger keeps it; e.g. "same error 3x" = not the code's fault). Reused in v3 for
+  auto-routing. NOT a checkpointer (one-shot task, Lesson 012) - an explicit in-state ledger.
+- PRINCIPLE (Andre): the system ASSISTS, does not GUARANTEE; on giving up, be truthful about
+  what it tried and hand control to the user. The human is the judge in v2.
+- DECIDABILITY is the routing rule, not the v2/v3 label: a test file that won't LOAD (pytest
+  exit 2/5) is DECIDABLE -> auto-route to the QA (v2, no judge, no ping-pong). An assertion
+  failure (exit 1) is UNDECIDABLE (code/test/spec?) -> v2 escalates to a human, v3 builds a
+  judge. Ping-pong + losing the fixed-target TDD property are costs of the v3 judge ONLY.
+- Refined v2 steps: 2) ledger + user-intervention on stuck; 2.5) decidable QA-route; 3)
+  while-True multi-build. (Corrected a mis-scope: the ledger is v2, not v3.)
+
+### Change 013: Capstone v2 step 2 - ledger + user-intervention DONE (25-Jun-2026)
+The builder no longer dies silently when stuck: it shows the full trajectory and lets the
+user (the judge) steer. Typed by hand. Full concept: Lesson 014.
+
+- LEDGER: `state.py` adds `ledger: Annotated[list, add]` (operator.add = list concat = append;
+  the humble cousin of add_messages, Lesson 001) + a `BuildEvent` dataclass
+  (author/artifact/content). Each node appends ONE event (write_spec/write_tests/write_code/
+  run_sandbox). This keeps the per-attempt trajectory the final state used to OVERWRITE.
+- INTERVENTION LOOP: `main.py` wraps the graph in an outer `while True`. The graph stays a
+  pure one-shot invoke (Lesson 012 holds - the loop lives in plain Python, not the graph).
+  On a stuck build (status=="failed" after the brake) it prints a truthful stuck-report FROM
+  the ledger (spec, tests, each coder attempt + each sandbox verdict), then asks the user:
+  feedback / retry / quit.
+- FEEDBACK BUG + FIX: the first cut checked `if choice == "e"`, so free-text typed at the
+  prompt was DISCARDED -> blind retries; the apparent "improvement" was non-determinism, not
+  steering (Lesson 009: a green build masked a DEAD intervention). Fixed by ACCUMULATING
+  free-text feedback and AUGMENTING the request each round (keep the task, add corrections).
+- VALIDATED live: a 3-round whack-a-mole on int->roman that converged to a GENUINE green
+  (real attempt1->2). Each correction killed its targeted bug the next round -> feedback now
+  genuinely steers.
+- BUG FIXED (prompt-echo): the orchestrator copied ORCHESTRATOR_PROMPT bullet-3 verbatim INTO
+  the spec. Cause: a rule was INLINED in the field list, so the model echoed the how into the
+  what. Fix: separate FORMAT (sections 1-4) from GUIDANCE (notes), lean on the POSITIVE
+  "Output ONLY sections 1-4" (Lesson 011: positive > negative).
+- KNOWN ISSUE PARKED: `input()` reads ONE line, so multi-line feedback truncates + the
+  remainder leaks into the next prompt (the `^R` mangling). Workaround: single-line feedback.
+  Real fix (deferred to step 3, when we are in main.py anyway): read-until-blank-line.
+- TEST TECHNIQUE: to exercise the STUCK path you must manufacture failures - weaken an agent
+  prompt (Andre temporarily regressed QA_PROMPT; since restored) or set MAX_ATTEMPTS=1. A
+  healthy pipeline one-shots and never shows the path you are trying to test (Lesson 013-D).
+
+### Change 014: Capstone v3 step 1 + 3 - surgical, stateful build loop (26-Jun-2026)
+The intervention loop stopped whack-a-moling: it now PERSISTS the build and edits ONLY the
+artifact the human targets. Typed by hand. Concepts: Lessons 015 (memory+targeting), 016
+(model ceiling). Full design: capstone.md "v3".
+
+- STATE: added `fix_target: str` ("" fresh | spec | tests | code) + `feedback: str`.
+- GRAPH: a DISPATCHER conditional edge from START routes on fix_target (Lesson 007), replacing
+  the fixed entry; an after_write_tests fork sends a TESTS fix straight to run_sandbox (REUSE
+  the code) else on to write_code. route_after_tests now LOGS its decision + the failing tests.
+- AGENTS: write_tests is EDIT-aware (fix_target=="tests": prev tests + feedback -> edit, keep
+  the good ones); write_code now also reads the human feedback (fix_target=="code"). [plan]
+  lines announce which agent edits which file.
+- MEMORY (main.py): the intervention loop carries {spec,tests,code,test_result} into the next
+  invoke (the Lesson 003 chat-loop pattern, for build-state) + asks "fix which?
+  [spec/tests/code]". Feedback is per-fix now (the artifacts persist, so no text re-accumulation).
+- PROVEN: the TESTS path converges - spec stays BYTE-IDENTICAL (pinned), the QA edits the suite
+  surgically, the coder cascades only if the corrected tests expose a code bug. The
+  "v2 couldn't, v3 can" moment (Lesson 015 dissolved).
+- OPEN: step 2 (spec EDIT-aware) NOT built - a "spec" fix still regenerates. The CODE-feedback
+  path is wired + confirmed reaching the coder (debug-print method, Lesson 016) but never
+  converged end-to-end (3B too weak; 8B already correct, so no code-fix was needed).
+- MODEL CEILING (Lesson 016): the bottleneck is now MODEL quality PER AGENT, not the wiring.
+  3B coder too weak; swapping to llama3 8B FIXED the coder but made the orchestrator chatty and
+  leak the code into the spec. -> points at PER-AGENT models as the next high-value move.
+
+### Change 015: Capstone v3 step 2 - spec edit-aware; V3 COMPLETE (26-Jun-2026)
+The orchestrator is now EDIT-aware too, completing the surgical trilogy (all three agents edit
+their OWN previous artifact + feedback). Typed by hand. Concept: Lesson 015 addendum.
+
+- agents.py: write_spec EDIT mode (fix_target=="spec": prev spec + feedback -> edit, keep the
+  good parts) - mirrors write_tests/write_code. Also removed the temp CODER-TASK debug print
+  (served its purpose: proved the wiring, Lesson 016).
+- PROVEN live: a contradictory-spec build (empty = palindrome AND raises) -> picked "spec" ->
+  "[orchestrator] editing spec (human-directed)" -> the new spec was NEAR-IDENTICAL to the old
+  with only the TARGETED rule changed (the proof it EDITED, not regenerated) -> cascaded ->
+  green on attempt 1.
+- V3 COMPLETE: all three fix_targets are surgical; the human-targeting + memory loop converges
+  across spec/tests/code. The Lesson 015 whack-a-mole is dissolved.
+- CAVEAT (Lesson 016): edit QUALITY is model-gated - the orchestrator only PARTIALLY applied
+  the feedback (kept one contradictory line); it converged only because no test discriminated
+  on it (Lesson 011). Wiring proven; quality wants a stronger / per-agent model.
+
+Next: C (ship-it) - M11 FastAPI wrapper + M12 deploy + confirm Langfuse.
+
+### Change 016: M10 eval + import-guard + the self-healing supervisor (26-Jun-2026)
+Built the eval (M10), used it to diagnose, then built the auto-judge supervisor (v3+). Typed by
+hand. Concepts: Lessons 016 (model ceiling), 017 (the judge).
+
+- EVAL (M10): `src/evals.py` - a "backtest" running a fixed task suite ONE-SHOT (no human),
+  reporting pass-rate + attempts. First numbers were poor: llama3=0%, llama3.2=20%.
+- DIAGNOSIS: nearly all failures were the QA's TEST FILE (won't-load, missing import, invented
+  requirements), not the code - and the coder-only loop can't fix QA bugs (Lesson 013-C).
+- STRUCTURAL GUARD (enforce, don't ask): `sandbox.py` auto-prepends `from solution import *` to
+  the test file if the QA forgot the import - killed the NameError class deterministically.
+- MODEL CEILING (Lesson 016): same architecture, swap to qwen2.5-coder -> 80% (100% on a lucky
+  run). PROVED the bottleneck was model capability, not the design. qwen2.5-coder set as default.
+- AUTO-JUDGE SUPERVISOR (v3+, Lesson 017): a `judge` node (decidable load-error tier + LLM tier)
+  writes fix_target+feedback; graph rewired to run_sandbox -> route_after_sandbox
+  {pass/brake -> done, else -> judge} -> dispatch -> the culprit agent -> loop. ONE brake
+  (`attempts`, now incremented in the JUDGE not the coder) = 3 auto-rounds, then escalate to human.
+- VALIDATED: judge classifies code vs tests (check_judge.py); routed -> code on a real code bug
+  (gcd, escalated after 3); routed -> tests on a QA bug (dropped `import pytest`) and the QA
+  RECOVERED it autonomously in 1 round - the value the coder-only loop never had.
+- NOTE: the high temperature + loose QA prompt used to TRIGGER failures are TEST FIXTURES -
+  restore temp 0.2 + the strong QA_PROMPT for production.
+
 ### Next Steps
 - [x] Install LangGraph
-- [ ] Set up Langfuse (cloud or self-hosted) and confirm a trace appears
-- [ ] Build a simple agent with memory scratchpad
+- [ ] Set up Langfuse (cloud or self-hosted) and confirm a trace appears   <- still open
+- [x] Build a simple agent with memory scratchpad (done - foundations agent)
 - [x] Install pytest and run the real test suite (4 tests passing, 23-Jun)
-- [ ] Add a conditional edge / loop (move beyond linear flow)
-- [ ] Add a checkpointer for persistent state across runs
+- [x] Add a conditional edge / loop (Change 007; capstone uses them too)
+- [x] Add a checkpointer for persistent state across runs (Change 004)
+- [x] Capstone v2: the fix-loop (wired Change 011; tested + validated Change 012)
+- [x] Capstone v2 step 2: ledger + user-intervention on stuck (Change 013, Lesson 014)
+- [x] Capstone v2 step 3: while-True multi-build (run_one_build + "build another?")
+- [x] Capstone v2 step 2.5 (attempt): surgical feedback-to-QA -> revealed Lesson 015
+- [x] Capstone v3 step 1 (tests path) + step 3 (code feedback): BUILT; tests-path PROVEN (Change 014)
+- [x] Capstone v3 step 2 (spec EDIT-aware): V3 COMPLETE - all 3 fix_targets surgical (Change 015)
+- [x] M10 eval harness + structural import-guard; model-ceiling found, qwen2.5-coder=80% (Change 016)
+- [x] v3+ self-healing supervisor: auto-judge routes each failure to the culprit agent (Change 016, Lesson 017)
+- [ ] SHIP-IT (C): M11 FastAPI wrapper + M12 deploy + confirm Langfuse   <- NEXT
+- [ ] restore production settings: temp 0.2 + strong QA_PROMPT (the test fixtures)
+- [ ] (later) PER-AGENT models (the Lesson 016 model-ceiling fix: strong coder, terse orchestrator)
 
 ### Questions/Blockers
 - How to structure the LangGraph state? -> started: typed `AgentState` + reducers.
@@ -432,7 +639,21 @@ is where depth happens; that is fine.
 Numbered 1-12 in build order. Each lists the concepts it exercises.
 (Estimates are focused build time; expect longer on the first pass while learning.)
 
-Progress: [x] 1 system prompt | [x] 2 multi-turn loop | [x] 3 persistent memory | [x] 4 ChromaDB ingest+retrieval | [x] 5 RAG pipeline | [x] 6 compress (24-Jun) | [ ] 7-12 pending  [+ conditional edges done, see Change 007]
+Progress - FOUNDATIONS (langgraph-app): [x] 1 system prompt | [x] 2 multi-turn | [x] 3 memory
+| [x] 4 ChromaDB | [x] 5 RAG | [x] 6 compress | [x] conditional edges (Changes 002-008).
+  -> All four thesis pillars (Write/Select/Compress/Isolate) now built.
+Progress - CAPSTONE (code-builder, fulfils milestones 7-12): [x] 7 ISOLATE = multi-agent v1
+(Change 010); v2 COMPLETE - fix-loop (Changes 011-012), ledger + user-intervention
+(Change 013), multi-build (step 3), surgical feedback-to-QA (step 2.5 attempt -> Lesson 015).
+v3 COMPLETE (Changes 014-015) - all 3 fix_targets surgical (tests/code/spec edit-aware),
+converges. Also DONE (Change 016): M10 eval + structural guard + v3+ SELF-HEALING supervisor
+(auto-judge routes to the culprit); qwen2.5-coder = 80-100% (Lessons 016-017). 10 Tests+eval
+is now solidly covered. Next: SHIP-IT (M11 API + M12 deploy + Langfuse). Deferred: PER-AGENT
+models (the model-quality ceiling).
+[x] 10 Tests+eval = QA tests + foundations unit tests + the M10 eval harness (src/evals.py).
+Partial: 8 Tools (code exec via sandbox, no ToolNode/ReAct), 9 Guardrails (sandbox + brake, no
+injection/validation layer). Pending: 11 API, 12 Deploy.
+Loose ends parked: Langfuse trace unconfirmed; compress token-trigger; summary/context test.
 
 **Milestone 0 - Foundations** (quick wins, build confidence)
 

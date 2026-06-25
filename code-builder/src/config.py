@@ -12,6 +12,6 @@ def get_llm() -> ChatOllama:
     # lower temperature than the chat agent
     # code wants determinism, not creativity
     return ChatOllama(
-        model=os.getenv("OLLAMA_MODEL", "llama3.2:latest"),
-        temperature=0.2,
+        model=os.getenv("OLLAMA_MODEL", "qwen2.5-coder:latest"),
+        temperature=0.5,
     )

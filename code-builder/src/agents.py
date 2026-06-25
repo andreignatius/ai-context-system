@@ -66,6 +66,17 @@ QA_PROMPT = (
     "Do NOT test the docstring, __name__, __annotations__, or other implementation details."
 )
 
+JUDGE_PROMPT = (
+    "You are a triage judge for a code-builder. A pytest test failed. Decide WHO is at fault:\n"
+    "- code  : the implementation is wrong (the spec + test are reasonable)\n"
+    "- tests : the test is wrong - a wrong expected value, an invented requirement the SPEC "
+    "does not state, or broken pytest syntax\n"
+    "- spec  : the spec is ambiguous or self-contradictory, so code and tests diverged "
+    "legitimately\n"
+    "Reply EXACTLY two lines and nothing else:\n"
+    "CULPRIT: <code|tests|spec>\n"
+    "REASON: <one short sentence>"
+)
 
 def _extract_code(text: str) -> str:
     """Pull runnable code from an LLM reply: the FIRST ```fenced``` block (ignoring any
@@ -82,27 +93,36 @@ def _extract_code(text: str) -> str:
 
 
 def write_spec(state) -> dict:
-    # orchestrator (isolated context): request -> spec
-    messages = [
-        SystemMessage(content=ORCHESTRATOR_PROMPT),
-        HumanMessage(content=state["request"]),
-    ]
+    """ORCHESTRATOR (isolated context): request -> spec.
+    EDIT mode (fix_target=='spec'): given its OWN previous spec + the human feedback, it EDITS
+    the spec (keep the good parts) instead of regenerating from scratch."""
+    if state.get("fix_target") == "spec" and state.get("spec"):
+        task = (
+            f"Original request:\n{state['request']}\n\n"
+            f"Your PREVIOUS spec:\n{state['spec']}\n\n"
+            f"A human reviewer says it needs changing:\n{state.get('feedback', '')}\n\n"
+            "Edit the spec to apply this; keep the parts that were already correct. "
+            "Return the full corrected spec in the same four-section format."
+        )
+        print("[orchestrator] editing spec (human-directed)")
+    else:
+        task = state["request"]
+        if state.get("feedback"):
+            task += f"\n\nIMPORTANT human feedback to apply:\n{state['feedback']}"
+        print("[orchestrator] wrote spec")
+
+    messages = [SystemMessage(content=ORCHESTRATOR_PROMPT), HumanMessage(content=task)]
     spec = llm.invoke(messages).content
-    print("[orchestrator] wrote spec")
-    return {"spec": spec,
-            "ledger": [BuildEvent("orchestrator", "spec", spec)]}
+    return {"spec": spec, "ledger": [BuildEvent("orchestrator", "spec", spec)]}
+
 
 def write_code(state) -> dict:
     """CODER (isolated context): spec -> code.
-    on a retry, the coder also gets its previous code + test failures,
-    so it can fix (not blindly rewrite)
-    increments the attempts counter each call
-    """
-    attempts = state.get("attempts", 0) + 1
-
+    On a retry it also gets its previous code + the test failures, so it fixes (not blindly
+    rewrites). The round counter now lives in the JUDGE, not here."""
     prev = state.get("test_result")
     if prev and not prev.get("passed", True):
-        # retry: feedback the last attempt + why it failed
+        # retry: feed back the last attempt + why it failed
         task = (
             f"SPEC:\n{state['spec']}\n\n"
             f"Your previous code:\n{state['code']}\n\n"
@@ -113,28 +133,76 @@ def write_code(state) -> dict:
         # first attempt: just the spec
         task = f"SPEC:\n{state['spec']}"
 
+    # judge/human-directed code fix: surface the reviewer's guidance to the coder
+    if state.get("fix_target") == "code" and state.get("feedback"):
+        task += (f"\n\nA reviewer says, specifically about the CODE:\n"
+                 f"{state['feedback']}\nApply this.")
+
     messages = [
         SystemMessage(content=CODER_PROMPT),
         HumanMessage(content=task),
     ]
     code = _extract_code(llm.invoke(messages).content)
-    print(f"[coder] wrote code (attempt {attempts})")
-    return {"code": code, "attempts": attempts,
-            "ledger": [BuildEvent("coder", "code", code)]}
+    print("[coder] wrote code")
+    return {"code": code, "ledger": [BuildEvent("coder", "code", code)]}
+
 
 def write_tests(state) -> dict:
-    """QA (isolated context): spec -> pytest tests."""
-    # task = f"SPEC:\n{state['spec']}\n\nCODE:\n{state['code']}"
-    task = f"SPEC:\n{state['spec']}"
-    messages = [
-        SystemMessage(content=QA_PROMPT),
-        HumanMessage(content=task),
-    ]
+    """QA (isolated context): spec -> pytest tests.
+    EDIT mode (fix_target=='tests'): given its OWN previous tests + the human feedback, the
+    QA fixes the suite (keep the good tests, repair the bad) instead of regenerating blind."""
+    if state.get("fix_target") == "tests" and state.get("tests"):
+        task = (
+            f"SPEC:\n{state['spec']}\n\n"
+            f"Your PREVIOUS test suite:\n{state['tests']}\n\n"
+            f"A human reviewer says it is wrong:\n{state.get('feedback', '')}\n\n"
+            "Fix ONLY what the feedback calls out; keep the tests that were already correct. "
+            "Return the full corrected test file."
+        )
+        print("[qa] editing tests (human-directed)")
+    else:
+        task = f"SPEC:\n{state['spec']}"
+        if state.get("feedback"):
+            task += f"\n\nIMPORTANT human feedback about the TESTS - apply it:\n{state['feedback']}"
+        print("[qa] wrote tests")
+    messages = [SystemMessage(content=QA_PROMPT), HumanMessage(content=task)]
     tests = _extract_code(llm.invoke(messages).content)
-    print("[qa] wrote tests")
-    return {"tests": tests,
-            "ledger": [BuildEvent("qa", "tests", tests)]}
+    return {"tests": tests, "ledger": [BuildEvent("qa", "tests", tests)]}
 
+
+def _parse_verdict(reply: str) -> tuple:
+    culprit, reason = "code", "(no reason parsed)"          # default to code = the old behaviour
+    for line in reply.splitlines():
+        low = line.strip().lower()
+        if low.startswith("culprit:"):
+            val = low.split(":", 1)[1]
+            culprit = "tests" if "test" in val else "spec" if "spec" in val else "code"
+        elif low.startswith("reason:"):
+            reason = line.split(":", 1)[1].strip()
+    return culprit, reason
+
+def _is_load_error(failures: str) -> bool:
+    f = failures.lower()
+    return "error collecting" in f or "errors during collection" in f or "==== errors ====" in f
+
+def judge(state) -> dict:
+    """Decide which agent is at fault and route a fix to it (auto version of the human's
+    fix_target). Decidable tier: a non-loading test file -> the QA. Undecidable tier: an LLM
+    weighs code vs tests vs spec on an assertion failure."""
+    attempts = state.get("attempts", 0) + 1
+    failures = state["test_result"]["failures"]
+
+    if _is_load_error(failures):
+        print(f"[judge] round {attempts}: test file did not LOAD -> tests (mechanical)")
+        return {"fix_target": "tests", "attempts": attempts,
+                "feedback": f"The test file failed to load:\n{failures}"}
+    
+    task = (f"SPEC:\n{state['spec']}\n\nTESTS:\n{state['tests']}\n\n"
+            f"CODE:\n{state['code']}\n\nFAILURE:\n{failures}")
+    reply = llm.invoke([SystemMessage(content=JUDGE_PROMPT), HumanMessage(content=task)]).content
+    culprit, reason = _parse_verdict(reply)
+    print(f"[judge] round {attempts}: -> {culprit} ({reason})")
+    return {"fix_target": culprit, "feedback": reason, "attempts": attempts}
 
 
 if __name__ == "__main__":

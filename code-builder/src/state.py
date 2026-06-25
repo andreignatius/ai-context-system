@@ -25,4 +25,6 @@ class BuilderState(TypedDict):
     test_result: dict
     status: str
     attempts: int
+    feedback: str                   # human 
+    fix_target: str                 # "fresh" | "spec" | "tests" | "code"  (which artifact to edit)
     ledger: Annotated[list, add]    # append-only trail of BuildEvents (the trajectory)

@@ -913,6 +913,492 @@ Feed the QA/test agent the SPEC ALONE (not the code) so its tests verify CORRECT
 independently and catch coder bugs - true TDD; the cost is the spec must be precise, because
 it is now the only shared contract between the two independent agents.
 
+### Addendum (24-Jun): green != correct - test COVERAGE gaps
+v1 ran end-to-end and reported `passed: True` - but the green was MISLEADING. The spec said
+"non-alphanumeric (except spaces) strings are NOT palindromes" (so "a!a" -> False), but the
+coder STRIPPED non-alnum ("a!a" -> "aa" -> True). They DISAGREE on "a!a". Yet the QA's
+non-alnum test used "a!b" - which is False under BOTH readings ("ab" is not a palindrome
+anyway) - a NON-DISCRIMINATING input. So it passed for the wrong reason and never exercised
+the divergence. Green build, latent bug.
+
+Lesson: TDD-from-spec gives an INDEPENDENT check, but a check with GAPS still gives false
+confidence. "Passed" means "passes THESE tests", not "is correct". Good QA must test
+DISCRIMINATING / adversarial cases - the inputs where interpretations diverge - or green is
+just green. (Refinement for v2+: prompt the QA to include adversarial cases. Also note: the
+spec's "reject non-alnum" was an UNUSUAL convention - the common one is to strip - so the
+spec itself wobbled. Garbage spec -> the whole chain wobbles, Lessons 010/011.)
+
+Also: LLM pipelines are NON-DETERMINISTIC - each run produced a different spec/code/tests.
+The predicted empty-string failure appeared in one run, not another. Expect variance.
+
 ### To revisit / try next
-- [ ] Step 5: run the tests in a sandbox; watch the empty-string test FAIL (QA catching the bug).
-- [ ] v2: the fix-loop feeds that failure back to the coder to iterate.
+- [x] Step 5: run the tests in a sandbox (temp dir + subprocess + timeout). Works; returns
+      {passed, failures}. (Specific failures vary run-to-run; coverage gaps can mask bugs.)
+- [x] v2: the fix-loop feeds a failure back to the coder to iterate (+ max-iteration brake).
+      (Wired 25-Jun, Change 011; testing next.)
+- [ ] QA prompt upgrade: require discriminating/adversarial test cases.
+
+---
+
+## Lesson 012: task pipeline vs conversational agent (25-Jun-2026)
+(Surfaced building the capstone v2 - "where's the while-True loop + checkpointer?")
+
+### Two SHAPES of agent system, with different memory/control needs
+CONVERSATIONAL AGENT (the foundations langgraph-app):
+- A back-and-forth that CONTINUES over many turns.
+- Needs a `while True` loop (keep talking until quit) AND a CHECKPOINTER + thread_id to
+  remember ACROSS turns and restarts (Lessons 003/004).
+- Memory lives BETWEEN invokes - each turn is one invoke; the checkpointer carries state over.
+
+TASK PIPELINE (the code-builder):
+- A ONE-SHOT job: input -> run to completion -> output -> exit.
+- Runs in a SINGLE invoke; needs no memory BETWEEN runs.
+- The working memory it DOES need (e.g. the retry feedback in the fix-loop) lives WITHIN that
+  one invoke, in the loop's state. So no `while True`, no checkpointer - by design.
+
+### Why it matters
+Do not bolt a chat loop / checkpointer onto a one-shot task out of habit. Ask: does this
+system CONTINUE across turns (conversation) or RUN to completion (task)? Match the machinery
+to the shape. The foundations agent and the code-builder use the SAME primitives (graph,
+state, nodes, edges) but different control/memory shapes.
+
+### Optional (not required) for a task pipeline
+- `while True` -> build MANY tasks in one session (UX).
+- checkpointer -> resumable builds + time-travel the internal loop (inspect each attempt,
+  Lesson 005).
+Nice-to-haves, not correctness needs.
+
+### One-sentence summary
+A conversational agent needs a loop + checkpointer to persist memory ACROSS turns; a one-shot
+task pipeline runs in a single invoke and keeps its working memory (e.g. retry feedback)
+WITHIN that invoke - so the loop/checkpointer are optional, not required.
+
+### To revisit / try next
+- [ ] (optional) wrap the builder in a while-True for multi-build sessions.
+- [ ] (optional) add a checkpointer to make builds resumable + inspect the retry history.
+
+---
+
+## Lesson 013: a red verdict does not say WHO is wrong (25-Jun-2026)
+(From testing the capstone v2 fix-loop on "int -> roman numeral": 3 runs, 5 bugs, and
+EVERY bug was upstream of the coder. The coder's code was correct on all 3 runs.)
+
+### What happened (the saga, compressed)
+- Run 1 (red, hit the brake at 3): (a) the SPEC hallucinated `0 -> ''`, contradicting the
+  "1..3999" range; (b) the QA used `pytest.raises` but never wrote `import pytest` - the
+  test file would not even load.
+- Run 2 (red, hit the brake at 3): a+b fixed, but the QA found NEW ways to break the file:
+  (c) no `from solution import int_to_roman` (NameError); (d) it QUOTED the call,
+  `assert 'int_to_roman(1)' == 'I'` (compares the literal text).
+- Run 3 (GREEN on attempt 1): genuine pass once the spec was consistent and the test file
+  ran. 3 prompt fixes total, ALL upstream (orchestrator + QA), NONE to the coder.
+
+### Lesson A: "red != broken code" (the mirror of Lesson 011)
+Lesson 011 said green != correct (a passing suite can have coverage gaps). The mirror is
+just as true: a FAILING suite does not mean the code is broken. A red verdict is only as
+trustworthy as the SPEC and the HARNESS that produced it. Here the code was right every
+time; the red came from a contradictory spec and a non-loading test file. Trust the verdict
+only as much as you trust the contract + the test runner behind it.
+
+### Lesson B: the QA is the structural weak link
+Across 3 runs the bottleneck was ALWAYS the QA, never the coder. That is not luck - writing
+a RUNNABLE test file is structurally harder than writing the function: it needs the right
+imports, no typos, and valid assertion syntax, or the WHOLE suite fails to load (one bad
+line zeroes out the entire harness). The function only has to be correct; the test file has
+to be correct AND loadable. More ways to fail = the weak link.
+
+### Lesson C: the loop only routes to the CODER (fire-and-forget QA)
+The v2 fix-loop's conditional edge is `{"retry": write_code, "done": END}`. It loops back to
+the CODER only. `write_tests` (the QA) runs ONCE at the start and is never re-invoked - it
+never sees a single failure log. So when the logs said `NameError: name 'pytest' is not
+defined` (a QA bug), they were delivered to the coder's desk - and the coder can only
+rewrite `solution.py`, never `test_solution.py`. The runs did not just get UNFIXABLE
+garbage, they got MIS-ROUTED garbage: a QA bug sent to the one agent powerless to fix it.
+The QA did not "fail to understand" the feedback - it was never asked.
+
+  write_spec -> write_tests -> write_code -> run_sandbox
+                    ^                             |
+                    |  NO edge back here          | retry
+                    X                             v
+                                  write_code <----+   (only the coder is in the loop)
+
+### Lesson D: validating a LOOP - plumbing vs value
+We almost declared victory too early. The 3 runs proved the loop's PLUMBING (retry fires,
+`attempts` increments, the brake stops at MAX) - but NOT its VALUE (a coder taking a real
+failure and converging red -> green), because runs 1-2 fed it unfixable bugs and run 3
+one-shot (loop never engaged). A live run could not be relied on to produce a natural,
+fixable coder bug (non-deterministic - might one-shot, might never converge).
+Fix = a DETERMINISTIC isolated test: plant a known buggy `solution.py` against a known-good
+test, drive the retry branch directly (`check_fixloop.py`), confirm it converges. Result:
+planted False -> coder read the logs -> fixed (and improved n<2 + sqrt) -> True. THEN the
+claim was earned. Lesson: to validate a loop, separate "the wiring runs" from "the wiring
+produces value", and manufacture the input the live system will not reliably give you.
+
+### Lesson E: the deeper limit - an assertion failure is UN-ATTRIBUTABLE
+Andre's instinct: classify the failure and route it back to the agent who authored the
+broken script. The clean part works - pytest's EXIT CODE distinguishes "tests ran and
+asserted-False" (code suspect) from "tests never loaded" (test file broken), so a
+collection error can route to the QA. But the hard part is a genuine limit:
+- An ASSERTION failure does NOT say whose fault it is. Exit code 1 = "code and tests
+  DISAGREE", not "code is wrong". The `0 -> ''` bug was an assertion failure whose real
+  cause was the SPEC. A returncode-classifier would have shipped it to the coder forever.
+- There are THREE authors, not two: orchestrator (spec), QA (tests), coder (code) - but
+  only TWO scripts. The orchestrator writes no file, yet its spec is upstream of both, and
+  spec bugs surface as exactly these ambiguous assertion failures.
+- "Which script failed to LOAD" is decidable from logs. "Which author is RIGHT when code
+  and tests disagree" is NOT - that needs a judge, not a classifier.
+
+### Lesson F: tactical - the weak-verb prompt bug
+The QA's missing `from solution import` traced to a weak verb: the prompt said "Assume
+`from solution import <function>`", which the model read as "you MAY assume it is available"
+rather than "WRITE this line". Changing it to "Begin the file with these import lines: ..."
+plus a POSITIVE assertion example fixed it in one shot. Imperatives + positive examples beat
+assumptions + negatives (Lesson 002 / Lesson 011, confirmed a 3rd time). When an agent omits
+something, check whether the instruction was a suggestion dressed as a command.
+
+### Addendum: decidable vs undecidable failures - the real routing rule (25-Jun)
+Lesson E said an assertion failure is un-attributable. The sharper framing (Andre's): split
+failures by DECIDABILITY, and let THAT - not the v2/v3 label - decide who handles each.
+- DECIDABLE (test file won't LOAD, pytest exit 2/5): the exit code NAMES the culprit = the
+  QA. No judge needed - the SYSTEM can auto-route this back to the QA even in v2.
+- UNDECIDABLE (assertion fails, exit 1): code and tests DISAGREE; the culprit could be the
+  code, the test, OR the spec. THIS is the only case that needs a judge.
+Crucial: decidable routing does NOT ping-pong, because each failure has exactly ONE correct
+home (exit 2/5 -> QA; exit 1 -> coder). PING-PONG (an endless code <-> test tug-of-war, each
+edit making the other side look broken) only arises in the UNDECIDABLE case, where you GUESS
+who to blame and the other side re-breaks. Letting the QA rewrite tests mid-loop also gives
+up v2's fixed-target TDD property (tests written once = a stationary target the coder can
+converge on). So the rule:
+  decidable   -> auto-route (cheap, safe, no judge) - fine in v2.
+  undecidable -> escalate to a HUMAN (v2) or build a JUDGE (v3).
+The judge + ping-pong problems belong ONLY to the undecidable branch - it was a mistake to
+attach them to ALL QA-routing.
+
+### One-sentence summary
+A red verdict tells you code and tests disagree, not WHO is wrong - and our v2 loop assumes
+it is always the coder (the QA is fire-and-forget), so QA bugs get mis-routed to an agent
+that cannot fix them; "which file failed to load" is decidable (route it to its author) but
+"who is right when they disagree" is not (it needs a judge, because the spec is a hidden
+third author).
+
+### To revisit / try next (this is the v3 "supervisor" design)
+- [ ] PROVENANCE / build-ledger (Andre's idea): a data structure recording, per attempt,
+      WHICH agent wrote WHICH script at WHICH step, and WHICH output log resulted - so a
+      failure can be traced to its author. Note: the CHECKPOINTER (Lesson 005) already gives
+      a timestamped per-step history for free - get_state_history is half of this ledger.
+      Caveat: provenance answers WHO AUTHORED, not WHO IS AT FAULT (Lesson E) - necessary
+      but not sufficient for routing.
+- [ ] CLASSIFY in run_sandbox: read pytest's exit code -> {load-error -> QA, assertion ->
+      coder/judge}. Make write_tests retry-aware (like write_code) + its own brake.
+      (The DECIDABLE part - load-error -> QA - is v2-doable; only the judge is v3.)
+- [ ] A JUDGE for assertion disagreements (code vs test vs spec) - the un-decidable case (v3).
+- [ ] Guard the timeout path: on TimeoutExpired we discard pytest's partial output
+      (e.stdout/e.stderr) - keep it for debugging.
+
+---
+
+## Lesson 014: human-in-the-loop intervention - the RIGHT boundary (25-Jun-2026)
+(From building capstone v2 step 2: the build ledger + user-intervention on stuck.)
+
+### The setup
+When the fix-loop gives up (brake hit), instead of dying silently the builder hands the
+HUMAN a truthful report and lets them steer. The human is the judge (the v2 principle: the
+system ASSISTS, it does not GUARANTEE; be truthful about what was tried). The graph stays a
+one-shot task; the "ask and retry" lives in an outer `while True` in main.py (Lesson 012).
+
+### The ledger is what makes judging possible
+State fields get OVERWRITTEN each retry (no reducer -> replace), so the final state only holds
+the LAST attempt. The ledger (an append-only `Annotated[list, add]` of BuildEvents) keeps the
+whole TRAJECTORY: spec, tests, and every (coder attempt -> sandbox verdict) pair. The
+trajectory is itself diagnostic - e.g. the SAME error across all 3 attempts means the coder
+changed the code and the error never budged => the bug is NOT in the code (it is in the
+test/spec). You can only see that if you kept the history.
+
+### THE BIG ONE: feedback must enter at the RIGHT boundary (the coarse-lever problem)
+Our intervention augments the REQUEST, which enters at request -> orchestrator. But in testing,
+the bugs were all in the QA (which reads only the SPEC, never the feedback). So a correction
+about a test bug is a BANK-SHOT: human -> request -> orchestrator -> spec -> QA. The
+non-deterministic QA then rolls a BRAND-NEW bug each round, so convergence is WHACK-A-MOLE
+(it took 3 rounds; one round even REGRESSED to an earlier bug). Each correction did kill its
+targeted bug next round (so feedback genuinely steers - unlike the first cut, which silently
+discarded it), but slowly, because it acts on the wrong agent.
+LESSON: route a correction to the agent that can ACT on it, not to an upstream proxy. The
+real cure is a SURGICAL lever (edit the tests directly / let the QA see the feedback), not
+"better feedback" through the orchestrator. (This is the IN-boundary design of Lesson 010,
+applied to HUMAN feedback: minimal-sufficient context delivered to the right place.)
+
+### Two tactical lessons
+- input() READS ONE LINE. Multi-line human input truncates, and the remainder leaks into the
+  next read (terminal `^R` mangling). If you want rich human input, read until a terminator
+  (e.g. a blank line), do not assume one input() call captures a paste.
+- DO NOT inline meta-instructions into an output template. The orchestrator echoed its own
+  rule ("edge cases MUST be consistent...") verbatim into the spec, because the rule sat
+  INSIDE the "3. Edge cases" field. Separate FORMAT (what to output) from GUIDANCE (how to do
+  it), and prefer a POSITIVE "Output ONLY sections 1-4" over a negative "do not copy this"
+  (Lesson 011: small models follow positives more reliably). Put the format constraint LAST
+  for recency (Lesson 002: models attend most to start/end).
+
+### Test technique: manufacture the failure
+To test a STUCK / error path you must induce failures a healthy pipeline will not produce -
+weaken an agent prompt, or set MAX_ATTEMPTS=1. A good pipeline one-shots and never walks the
+path you are trying to test. (Same principle as Lesson 013-D's planted-bug test: manufacture
+the input the live system will not reliably give you.)
+
+### One-sentence summary
+Hand the human a truthful TRAJECTORY (the ledger) so they can judge a stuck build - but route
+their correction to the agent that can ACT on it: feeding QA-bug feedback through the
+orchestrator is a coarse bank-shot that converges by whack-a-mole, which is the live case for
+a surgical (edit-tests / QA-visible) feedback lever.
+
+### Addendum: the is_palindrome case study - nobody's feedback reaches the QA (26-Jun)
+Ran is_palindrome (the canonical AMBIGUOUS spec - Lesson 011's own example) through the v2
+intervention loop. 3 builds, 2 human corrections, never converged - and it laid the
+wrong-boundary problem bare. In ALL 3 builds the CODER's code was essentially correct; the
+QA's tests were the bug:
+- build 1: QA wrote CONTRADICTORY tests - "...Panama" == True (non-alnum IGNORED) AND
+  is_palindrome("a!b!") raises ValueError (non-alnum REJECTED). No code satisfies both.
+- build 2: contradiction again - "...Panama" == True (case-INSENSITIVE) AND "Madam" == False
+  (case-SENSITIVE). Mutually exclusive.
+- build 3: MALFORMED test - `assert pytest.raises(ValueError, is_palindrome)` (calls with no
+  arg -> TypeError; misuses pytest.raises).
+The coder produced IDENTICAL code across attempts each time = the Lesson 013 "same error 3x =
+not the code's fault" signal.
+
+THE SMOKING GUN - who gets which feedback:
+| who is WRONG | who the pytest log reaches | who the human feedback reaches |
+|--------------|---------------------------|--------------------------------|
+| the QA       | the CODER (retry branch)  | the ORCHESTRATOR (request->spec)|
+The QA reads the spec ONLY and runs ONCE (Lesson 013-C), so NOBODY's correction ever reaches
+the agent that is actually wrong. The human even typed "the test is wrong" - it went to the
+orchestrator, not the QA. That is why it is whack-a-mole: the loop is STRUCTURALLY unable to
+fix a QA bug. Not a regression - the documented coarse-lever limit, biting hard.
+
+Takeaways:
+- ambiguous specs are a TRAP for multi-agent (orchestrator + QA resolve conventions
+  DIFFERENTLY -> contradictory tests). Use UNAMBIGUOUS tasks (int->roman, is_prime) to test
+  the machinery; save is_palindrome as a stress test.
+- "quality regressed" was a misread: earlier one-shots were luck + lenient tests (Lesson 011
+  variance). The system behaved exactly as documented.
+- the cure is step 2.5 + surgical feedback: re-invoke the QA on ITS OWN failures, and let
+  human feedback reach the QA, not just the orchestrator.
+
+### To revisit / try next
+- [ ] SURGICAL feedback: edit the failing tests/spec directly, or pass feedback into the QA's
+      own context - so a correction reaches the agent that owns the bug.
+- [ ] multi-line feedback reader (read until a blank line) - the deferred input() fix.
+- [ ] accumulated feedback could bloat the request over many rounds - cap or summarise it.
+
+---
+
+## Lesson 015: regeneration vs editing - convergence needs MEMORY + TARGETING (26-Jun-2026)
+(From testing v2 surgical-feedback on is_palindrome: feedback reached the QA, but it STILL
+whack-a-moled. Andre diagnosed the real architectural flaw.)
+
+### The flaw: every intervention round is a fresh random draw
+Each round, main.py calls `app.invoke({request, feedback})`, which runs
+write_spec -> write_tests -> write_code FROM SCRATCH. The invoke is STATELESS (Lesson 012),
+so every round DISCARDS the previous spec/tests/code and regenerates all three. The only
+thing carried forward is the feedback TEXT. So the system has NO MEMORY of its own artifacts.
+
+Seen in the log (5 rounds on is_palindrome):
+- round N feedback fixes the last bug, but the non-deterministic QA regenerates a BRAND-NEW
+  contradiction (e.g. "!@#$" -> False while "" -> True, though both clean to ""; or
+  asserting "a, b!@#" is a palindrome when "ab" is not).
+- the target is RE-RANDOMISED every round, so it cannot converge - good work is thrown away
+  and new bugs appear. That IS the whack-a-mole.
+
+### The asymmetry that gives it away
+The CODER is the ONLY agent that EDITS: on a retry it receives its PREVIOUS code + the
+failures, so it refines toward a fixed target (this is why the coder loop converges - Lesson
+013-D). The orchestrator and QA REGENERATE BLIND each round (they get only request/spec, never
+their own previous output). So two of three agents have no continuity. Convergence requires
+all the artifacts to hold still except the one being fixed.
+
+### The two missing capabilities (Andre's words: "keep track of past iterations and know
+### which agent to edit which script")
+1. MEMORY - persist {spec, tests, code} across intervention rounds; keep the parts that were
+   RIGHT instead of regenerating them.
+2. TARGETING - identify WHICH artifact is wrong and edit ONLY that one (surgically), pinning
+   the rest. If spec+code are fine and one test assertion is wrong, re-run ONLY the QA to edit
+   THAT test.
+
+We currently have NEITHER. The build ledger RECORDS the trajectory but nothing USES it to
+target. The checkpointer (Lesson 005/012, dismissed as "optional") is exactly the mechanism
+that would persist artifacts across rounds. Surgical feedback (Lesson 014) is the targeting.
+This finding unifies all those deferred threads: convergence = memory + targeting.
+
+### Caveat: is_palindrome is also a pathological spec
+Independent of the architecture, is_palindrome is genuinely self-contradictory: after
+stripping non-alnum, "", "   ", and "!@#$" ALL collapse to "" - so "empty raises / whitespace
+False / non-alnum False / empty-is-palindrome True" cannot all hold unless you check BEFORE
+cleaning. Even a human team regenerating from scratch each round would spin. Fighting a weak
+architecture AND the worst-case task at once. Use unambiguous tasks to test; the architecture
+is the real lesson.
+
+### One-sentence summary
+The v2 loop whack-a-moles because each intervention round regenerates the WHOLE pipeline from
+scratch (no memory) and sprays feedback at every agent (no targeting), so the target is
+re-randomised every round; convergence needs to PERSIST the artifacts and SURGICALLY edit only
+the wrong one - which is the v3 redesign.
+
+### Addendum: v3 BUILT + PROVEN - the loop converges (26-Jun)
+The three "to revisit" items below are now all DONE (Changes 014-015):
+- MEMORY: main.py carries {spec,tests,code,test_result} into the next invoke (Lesson 003 pattern).
+- TARGET: a `fix_target` + a dispatcher (Lesson 007) send a fix to ONE agent; the rest are pinned.
+- EDIT-AWARE: all three agents (orchestrator/QA/coder) EDIT their own previous artifact +
+  feedback instead of regenerating.
+PROVEN live: a tests-fix converges (spec byte-identical/pinned, QA edits the suite surgically);
+a spec-fix EDITS the spec (near-identical, only the targeted rule changed) and cascades to green.
+The whack-a-mole is GONE - convergence where v2 re-randomised. CAVEAT: edit QUALITY is still
+model-gated (llama3.2 only partially applied a spec edit) - the WIRING is what was proven here;
+quality wants a stronger / per-agent model (Lesson 016).
+
+### To revisit / try next (= the v3 design)
+- [ ] PERSIST artifacts across rounds (carry {spec,tests,code} forward, or a checkpointer).
+- [ ] Make the QA + orchestrator RETRY-AWARE (previous output + feedback -> EDIT, like the coder).
+- [ ] TARGET: route a fix to ONE agent (re-run only it + downstream), pinning the rest.
+
+---
+
+## Lesson 016: agent quality is capped by MODEL capability (26-Jun-2026)
+(From testing v3 step-3, the "code" fix path: the human's feedback was CONFIRMED reaching the
+coder, and it STILL could not write correct code.)
+
+### The diagnostic that settled it: print the actual prompt
+The coder kept ignoring the human's "raise ValueError on non-alnum" feedback. Two hypotheses:
+a wiring bug (feedback not reaching the coder) or a model limit. To decide, we added a temp
+debug dump of the EXACT task string the coder receives (Lesson 009: inspect the data, do not
+trust the surface). The dump showed the feedback VERBATIM in the prompt:
+    "A human reviewer says, specifically about the CODE: <feedback> ... Apply this."
+=> wiring is fine. This technique ISOLATES wiring from capability - always print what the
+agent actually sees before blaming the agent.
+
+### Evidence it is the MODEL, not wiring or temperature
+- WIRING: ruled out - the debug dump proved the feedback was in the prompt.
+- TEMPERATURE: ruled out - the coder's output VARIED across attempts (added empty-checks,
+  len-checks), so it was not stuck on one deterministic answer. Variation did not help.
+- THE SMOKING GUN: when the coder finally tried to use the feedback it wrote the raise
+  BACKWARDS - `if s != s[::-1]: raise ValueError(...); return False` - i.e. raise when NOT a
+  palindrome, return False when it IS. It is not refusing the instruction; it genuinely does
+  not UNDERSTAND it. A 3B model (llama3.2) has a strong "palindrome = strip + compare" prior
+  that overrides the spec, the failing test, AND the human feedback.
+
+### The asymmetry: editing a test is EASY, writing code is HARD
+The SAME architecture converged a "tests" fix in the same session (flip `== True` to
+`== False` - a tiny edit any model can do) but failed every "code" fix (writing a correct
+implementation needs real coding ability). So the human-targeting + memory loop (v3) is SOUND
+- it is specifically the CODER's code-quality that is capped by the model. The weakest agent's
+model is the system's ceiling.
+
+### The lesson
+No orchestration cleverness fixes a model that cannot follow the prompt. Match the model to
+the task: a cheap small model is fine for easy edits (QA test tweaks, the orchestrator's
+spec), but the CODER needs a capable / code-specialised model (e.g. llama3 8B, or
+qwen2.5-coder) or the whole pipeline stalls on it. This also argues for PER-AGENT models
+(cheap where easy, strong where hard) rather than one shared LLM (today config.get_llm() is
+shared by all three agents).
+
+### One-sentence summary
+The v3 wiring was correct (proved by printing the coder's actual prompt) - it was the 3B model
+that could not implement "raise on non-alnum" (it even wrote the raise backwards); agent
+quality is capped by model capability, and since editing a test is easy but writing code is
+hard, the CODER needs a stronger/code-specialised model than the rest.
+
+### Addendum: the model swap is NON-UNIFORM (26-Jun)
+Swapped OLLAMA_MODEL to llama3:latest (8B) and re-ran. The bigger model did NOT improve the
+system uniformly - it shifted WHERE it fails:
+- CODER: BETTER - wrote correct standard-palindrome code on attempt 1 and held it stable (vs
+  the 3B flailing / writing the raise backwards). Confirms the capability point indirectly.
+- ORCHESTRATOR: WORSE - ignored "EXACTLY four sections, output ONLY sections 1-4" and reverted
+  to a chatty assistant tutorial ("Here's a simple function... Hope that helps!") AND LEAKED
+  the full implementation INTO the spec - regressing the no-code-leak we had tuned. The spec
+  stopped being a clean contract; it now contained the answer, quietly breaking TDD-INDEPENDENCE
+  (the QA no longer derives tests from a contract alone - Lesson 011).
+- QA: still wrong - confidently asserted a REAL palindrome ("Was it a car or a cat I saw?") was
+  == False.
+The build still CONVERGED, but via two human "tests" fixes - the CODE-feedback path was never
+exercised (the 8B coder nailed the code, so no code fix was needed). So Lesson 016's exact
+prediction (stronger coder acts on code-feedback) stays INDIRECTLY confirmed, not directly tested.
+
+COROLLARY: "use a bigger model" is NOT a uniform win - it trades one failure mode for another
+(better code, chattier/leakier spec). This sharpens the PER-AGENT-MODELS case: put the muscle on
+the CODER, but the orchestrator wants a TERSE model (or a re-hardened prompt). One shared LLM
+cannot be optimal for agents with OPPOSITE needs (terse-structured spec vs creative-correct code).
+
+### To revisit / try next
+- [~] Re-run the "code" fix with a stronger coder (llama3:latest tried; coder IS more capable,
+      but the code-feedback path itself is still untested - need a task where 8B code is wrong).
+- [ ] PER-AGENT models: let config pick a different model per role (cheap QA/orchestrator,
+      strong coder) instead of one shared llm.
+- [ ] Remove the temp CODER-TASK debug print now it has served its purpose.
+
+### Addendum 2: qwen2.5-coder CONFIRMS the ceiling - 20% -> 80% (26-Jun)
+The clean A/B that settles it: same architecture, same eval, same tasks - only the model
+changes. llama3=0%, llama3.2=20%, qwen2.5-coder=80% (4/5 one-shot; 100% on a lucky run). So the
+poor autonomous pass-rate was ALWAYS the model, never the design - every v1/v2/v3 decision was
+sound. The one remaining failure (gcd) was spec ambiguity (Lesson 011), the human-in-the-loop
+case. Set qwen2.5-coder as the default. Lesson confirmed with a number, not a hunch.
+
+---
+
+## Lesson 017: the self-healing supervisor - an auto-judge that routes to the author (26-Jun-2026)
+(Built after the eval (M10) showed the autonomous floor was gated by QA reliability. Andre's
+idea: "route each error to the responsible agent" - i.e. automate the human's fix_target.)
+
+### The idea: automate the human's fix_target with a JUDGE
+v3 already lets a HUMAN pick which artifact to fix (fix_target) when stuck; the edit-aware
+agents + dispatcher do the rest. The self-healing supervisor just replaces the human with a
+JUDGE for N rounds, then escalates to the human. The judge's `culprit` IS the human's
+`fix_target`; everything downstream was already built - the only new piece is the judge + the
+loop wiring. (ISOLATE at its fullest: a supervisor that triages and routes to specialists.)
+
+### The judge - two tiers (Lesson 013 decidable/undecidable)
+- DECIDABLE (mechanical, no LLM): the test file did not LOAD (collection error) -> the QA's
+  file is broken -> route to tests. Free, certain.
+- UNDECIDABLE (LLM): an assertion failed -> a focused judge call reads spec+tests+code+failure
+  and returns CULPRIT (code|tests|spec) + REASON. culprit -> fix_target, reason -> feedback.
+  Lenient parse, default to 'code' (the old safe behaviour).
+
+### The brake: ONE counter, incremented in the JUDGE
+The loop now passes through the judge every round (any agent may act), so the brake must count
+ROUNDS, not coder-calls. Insight (Andre): reuse the existing `attempts` counter, but MOVE the
+increment from write_code to the JUDGE - the node that runs once per round. MAX_ATTEMPTS=3
+rounds, then route to the human (the existing stuck report). One counter, one brake - no
+second `rounds` field needed.
+
+### Validated three ways
+1. check_judge.py (isolation): correctly fingers a code bug as 'code', a test bug as 'tests'.
+2. gcd, a real CODE bug (qwen wrote the LCM formula + oscillated on the import): judge routed
+   -> code every round (correct), the coder could not fix it, escalated to the human after 3.
+   The whole loop worked: judge -> route -> brake -> human.
+3. gcd, a TEST bug (the QA dropped `import pytest`): judge routed -> tests, the QA edited the
+   import back in, GREEN in ONE round - spec + code pinned. The coder-only loop could NEVER do
+   this (it cannot touch the test file). The judge's value, demonstrated.
+
+### The KEY insight: the value is routing AWAY from the coder
+On a TEST or SPEC bug the judge routes to the QA/orchestrator - something the old coder-only
+loop structurally could not do (Lesson 013-C). THAT is its value-add. On a pure CODE bug it
+correctly routes to the coder = the same as the old loop, so it offers no shortcut for a stuck
+coder (just one extra LLM call to confirm 'code'). So the supervisor earns its keep
+specifically on the QA/spec failures the eval showed dominate autonomous runs.
+
+### Honest limits
+- The judge is MODEL-GATED (Lesson 016): on a weak model it would mis-attribute. qwen2.5-coder
+  makes it reliable; llama3.2 would not.
+- PING-PONG (judge flips code <-> tests) is bounded by the combined brake (3 -> human).
+- Edit/coder QUALITY is still model + TEMPERATURE gated - keep the coder at temp 0.2; high temp
+  makes it oscillate (the import/LCM flip-flop on gcd). High temp + a loose QA prompt are useful
+  to TRIGGER failures for testing, but are test fixtures - restore for production.
+
+### One-sentence summary
+The self-healing supervisor replaces the human's fix_target with a JUDGE (decidable load-errors
+mechanically, undecidable assertions by LLM) that routes each failure to the agent who can fix
+it, looping a combined-braked 3 rounds then escalating to the human - and its real value is
+routing AWAY from the coder to recover the QA/spec bugs the old coder-only loop never could.
+
+### To revisit / try next
+- [ ] PER-AGENT models/temps (the eval + gcd both point here): a strong/deterministic coder and
+      a separate judge model - config.get_llm(role) instead of one shared llm.
+- [ ] NON-PROGRESS detection: if the same failure repeats, stop trusting the judge and escalate
+      early (cheaper than burning all 3 rounds; guards ping-pong).
+- [ ] the judge could append its verdicts to the LEDGER for a transparent stuck-report.

@@ -1,0 +1,53 @@
+(openwebui-env) (base) andre@Andres-MacBook-Air code-builder % OLLAMA_MODEL="qwen2.5-coder:latest" python -m src.evals
+[plan] fresh build -> orchestrator(spec) -> QA(test_solution.py) -> coder(solution.py)
+[orchestrator] wrote spec
+[qa] wrote tests
+[coder] wrote code (attempt 1)
+[sandbox] passed: True
+[router] all tests pass -> DONE
+[plan] fresh build -> orchestrator(spec) -> QA(test_solution.py) -> coder(solution.py)
+[orchestrator] wrote spec
+[qa] wrote tests
+[coder] wrote code (attempt 1)
+[sandbox] passed: True
+[router] all tests pass -> DONE
+[plan] fresh build -> orchestrator(spec) -> QA(test_solution.py) -> coder(solution.py)
+[orchestrator] wrote spec
+[qa] wrote tests
+[coder] wrote code (attempt 1)
+[sandbox] passed: True
+[router] all tests pass -> DONE
+[plan] fresh build -> orchestrator(spec) -> QA(test_solution.py) -> coder(solution.py)
+[orchestrator] wrote spec
+[qa] wrote tests
+[coder] wrote code (attempt 1)
+[sandbox] passed: False
+[router] tests failed -> auto-retry the CODER (attempt 1/3); tests held fixed, only the code is rewritten here
+         FAILED test_solution.py::test_gcd_negative_input - Failed: DID NOT RAISE Valu...
+[coder] wrote code (attempt 2)
+[sandbox] passed: False
+[router] tests failed -> auto-retry the CODER (attempt 2/3); tests held fixed, only the code is rewritten here
+         FAILED test_solution.py::test_gcd_zero_input - Failed: DID NOT RAISE ValueError
+         FAILED test_solution.py::test_gcd_negative_input - AssertionError: assert 'In...
+         FAILED test_solution.py::test_gcd_both_zero - AssertionError: assert 'Inputs ...
+[coder] wrote code (attempt 3)
+[sandbox] passed: False
+[router] still red after 3 coder attempts -> GIVE UP, hand to the human
+         FAILED test_solution.py::test_gcd_zero_input - Failed: DID NOT RAISE ValueError
+         FAILED test_solution.py::test_gcd_negative_input - AssertionError: assert 'In...
+         FAILED test_solution.py::test_gcd_both_zero - AssertionError: assert 'Inputs ...
+[plan] fresh build -> orchestrator(spec) -> QA(test_solution.py) -> coder(solution.py)
+[orchestrator] wrote spec
+[qa] wrote tests
+[coder] wrote code (attempt 1)
+[sandbox] passed: True
+[router] all tests pass -> DONE
+
+===== EVAL REPORT =====
+[PASS] attempts=1  write function to determine if integer is prime number
+[PASS] attempts=1  write function to compute factorial of integer
+[PASS] attempts=1  write function to reverse a string given a string input
+[FAIL] attempts=3  write function to compute the greatest common divisor o
+[PASS] attempts=1  write function to convert float value from celsius to f
+
+PASS RATE: 4/5 = 80%
