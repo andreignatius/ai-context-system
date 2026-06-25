@@ -1402,3 +1402,68 @@ routing AWAY from the coder to recover the QA/spec bugs the old coder-only loop 
 - [ ] NON-PROGRESS detection: if the same failure repeats, stop trusting the judge and escalate
       early (cheaper than burning all 3 rounds; guards ping-pong).
 - [ ] the judge could append its verdicts to the LEDGER for a transparent stuck-report.
+
+---
+
+## Lesson 018: an API exposes YOUR agent logic, not a generic chat (26-Jun-2026)
+(From M11 - and the "why not just open-webui serve?" question.)
+
+### The layers
+```
+  Browser UI   <- the FACE (borrowed: Swagger /docs, Streamlit, or Open WebUI)
+  Agent logic  <- the BRAIN (what YOU built: orchestrator/QA/coder/sandbox/judge)
+  Ollama       <- the engine (runs the model)
+```
+`open-webui serve` ships a GENERIC chat brain (forward prompt -> model -> reply, + built-in
+RAG/tools). Your `api.py` ships YOUR brain - a specific, verified, self-healing workflow. Same
+engine underneath; different logic layer.
+
+### The differentiator: VERIFIED output
+A chat server returns whatever the model SAID (unverified text). Your `/build` returns code that
+was EXECUTED against generated tests in a sandbox - `status=="ok"` is a real pass/fail signal,
+not a vibe. That verification is the value your agent adds over a raw model call.
+
+### The frontend is BORROWED, never hand-built
+The project is the brain, not the face. M11's auto-generated Swagger `/docs` is already a usable
+UI; Streamlit/Gradio (~20 lines of Python) or pointing Open WebUI at the API (OpenAI-compat shim
+/ Pipelines) are the upgrade paths. Do not code a bespoke frontend - off-thesis.
+
+### One-sentence summary
+An API server exposes the agent LOGIC you built (a verified, self-healing multi-agent workflow),
+not a generic chat over a raw model - which is why you build your own API instead of running
+open-webui serve; the UI is borrowed (Swagger now, Streamlit/Open WebUI later).
+
+---
+
+## Lesson 019: containerize for reproducibility - and the localhost-in-a-container gotcha (26-Jun-2026)
+(From M12 - Dockerizing the builder API.)
+
+### What Docker buys: "runs the same everywhere"
+A Dockerfile is a RECIPE; `docker build` bakes it into an IMAGE (app + pinned deps + runtime,
+frozen); `docker run` starts a CONTAINER (a running instance of the image). The win is
+REPRODUCIBILITY - the image runs identically on any machine with Docker, killing "works on my
+machine". A container is lighter than a VM (shares the host kernel, isolates just the app).
+PIN your deps (==versions) or the image is only as reproducible as whatever "latest" happened
+to be that day (Andre's catch).
+
+### The gotcha: `localhost` inside a container is the CONTAINER, not the host
+Our app calls Ollama. Inside the container, `localhost:11434` points at the container itself -
+nothing is listening there; Ollama runs on the HOST. Fix: reach the host via the special DNS
+name `host.docker.internal:11434` (Docker Desktop), passed in as `OLLAMA_BASE_URL`. GENERAL
+RULE: a container is ISOLATED by default - anything outside it (host services, other containers)
+is reached by an explicit address, never `localhost`.
+
+### Keep the image LEAN
+Do NOT `pip freeze` a fat env into the image (our openwebui-env has ~265 packages). Pin the few
+DIRECT deps; pip resolves the rest. A `.dockerignore` keeps junk (logs, __pycache__, *.sqlite,
+chroma_db) out of the build context.
+
+### Two daemon facts that bit us
+- `docker --version` works with NO daemon (it only checks the client). `docker build/run` need
+  the DAEMON (the engine) running - on a Mac that means launching Docker Desktop. Confirm with
+  `docker info` (a `Server:` section = daemon up).
+
+### One-sentence summary
+Docker packages the app + its PINNED environment into a portable IMAGE that runs the same
+anywhere; the classic gotcha is that `localhost` inside a container is the container itself, so
+host services (like Ollama) are reached via host.docker.internal, not localhost.

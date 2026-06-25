@@ -13,5 +13,6 @@ def get_llm() -> ChatOllama:
     # code wants determinism, not creativity
     return ChatOllama(
         model=os.getenv("OLLAMA_MODEL", "qwen2.5-coder:latest"),
+        base_url=os.getenv("OLLAMA_BASE_URL", "http://localhost:11434"),
         temperature=0.5,
     )

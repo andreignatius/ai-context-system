@@ -541,6 +541,47 @@ hand. Concepts: Lessons 016 (model ceiling), 017 (the judge).
 - NOTE: the high temperature + loose QA prompt used to TRIGGER failures are TEST FIXTURES -
   restore temp 0.2 + the strong QA_PROMPT for production.
 
+### Change 017: M11 - FastAPI wrapper; the builder is a service (26-Jun-2026)
+Exposed the code-builder over HTTP. Typed by hand. Concept: Lesson 018.
+
+- `src/api.py`: a FastAPI app. `build_graph()` is built ONCE at startup, reused per request.
+  - `GET /health` -> {"status":"ok"}.
+  - `POST /build {request}` -> runs the graph ONE-SHOT (autonomous; the judge self-heals up to 3
+    rounds, no human over HTTP) -> returns {status, spec, code, tests} via Pydantic models.
+- Run: `uvicorn src.api:app --reload` from code-builder/. Free interactive docs at `/docs` (Swagger).
+- Verified live: GET /health -> ok; POST /build "reverse a string" -> ran
+  orchestrator->QA->coder->sandbox (passed) -> returned `return s[::-1]` + tests, status=ok, all
+  over HTTP.
+- KEY (Lesson 018): status=="ok" means the code was EXECUTED against the generated tests and
+  PASSED - VERIFIED output, not a raw chat reply. That is the difference from `open-webui serve`
+  (generic chat over a model); this serves YOUR multi-agent, self-healing, test-verified workflow.
+- One-shot only (no human intervention over HTTP) - a stateful/session API is a v3+ deferred item.
+
+Next: M12 - containerize (Dockerfile, +/- compose with Ollama). Then the Langfuse trace.
+
+### Change 018: M12 - containerized the builder (Docker) (26-Jun-2026)
+Packaged the API + its environment into a portable Docker image. Typed by hand. Concept:
+Lesson 019.
+
+- `requirements.txt`: the 6 direct deps, PINNED to the working versions (== ; Andre's catch -
+  unpinned defeats Docker's reproducibility). pip resolves transitive deps (pydantic via fastapi).
+- `Dockerfile`: FROM python:3.11-slim -> WORKDIR /app -> install requirements -> COPY src/ ->
+  CMD uvicorn src.api:app --host 0.0.0.0 --port 8000. Plus a `.dockerignore` (logs, __pycache__,
+  *.sqlite, chroma_db).
+- `config.py`: `base_url=os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")` - so the
+  container can reach the HOST's Ollama (localhost inside a container = the container itself).
+- Build + run: `docker build -t code-builder .` ; `docker run -p 8000:8000 -e
+  OLLAMA_BASE_URL=http://host.docker.internal:11434 code-builder`.
+- VERIFIED live: POST /build "factorial" from the browser -> the full pipeline ran INSIDE the
+  container -> reached the host's Ollama via host.docker.internal -> pytest in the sandbox ->
+  status=ok, correct factorial code returned over HTTP (200). The whole self-healing,
+  test-verified stack, in a container, talking to the host model.
+- "Deploy" = the portable IMAGE: it runs on any host with Docker + an Ollama. (A cloud box would
+  just need RAM to also run Ollama - skipped; the container is the artifact.) Now 10/12.
+
+Next: Langfuse trace (the last C item) - set up + wire the callback into the capstone, confirm
+a trace appears.
+
 ### Next Steps
 - [x] Install LangGraph
 - [ ] Set up Langfuse (cloud or self-hosted) and confirm a trace appears   <- still open
@@ -556,8 +597,10 @@ hand. Concepts: Lessons 016 (model ceiling), 017 (the judge).
 - [x] Capstone v3 step 2 (spec EDIT-aware): V3 COMPLETE - all 3 fix_targets surgical (Change 015)
 - [x] M10 eval harness + structural import-guard; model-ceiling found, qwen2.5-coder=80% (Change 016)
 - [x] v3+ self-healing supervisor: auto-judge routes each failure to the culprit agent (Change 016, Lesson 017)
-- [ ] SHIP-IT (C): M11 FastAPI wrapper + M12 deploy + confirm Langfuse   <- NEXT
-- [ ] restore production settings: temp 0.2 + strong QA_PROMPT (the test fixtures)
+- [x] C / M11: FastAPI wrapper (src/api.py) - the builder is an HTTP service (Change 017)
+- [x] C / M12: containerized (Dockerfile + .dockerignore) - runs in Docker, talks to host Ollama (Change 018)
+- [ ] C: confirm a Langfuse trace (set up + wire the callback into the capstone)   <- NEXT (last C item)
+- [ ] restore strong QA_PROMPT for production (temp kept at 0.5 by choice; the loose QA prompt was a fixture)
 - [ ] (later) PER-AGENT models (the Lesson 016 model-ceiling fix: strong coder, terse orchestrator)
 
 ### Questions/Blockers
@@ -648,8 +691,9 @@ Progress - CAPSTONE (code-builder, fulfils milestones 7-12): [x] 7 ISOLATE = mul
 v3 COMPLETE (Changes 014-015) - all 3 fix_targets surgical (tests/code/spec edit-aware),
 converges. Also DONE (Change 016): M10 eval + structural guard + v3+ SELF-HEALING supervisor
 (auto-judge routes to the culprit); qwen2.5-coder = 80-100% (Lessons 016-017). 10 Tests+eval
-is now solidly covered. Next: SHIP-IT (M11 API + M12 deploy + Langfuse). Deferred: PER-AGENT
-models (the model-quality ceiling).
+is now solidly covered. [x] 11 API = src/api.py FastAPI service (Change 017); [x] 12 Deploy =
+Dockerized (Change 018; container talks to host Ollama). Now 10/12 done. Next: confirm a Langfuse
+trace (the last loose end). Deferred: PER-AGENT models (model-quality ceiling).
 [x] 10 Tests+eval = QA tests + foundations unit tests + the M10 eval harness (src/evals.py).
 Partial: 8 Tools (code exec via sandbox, no ToolNode/ReAct), 9 Guardrails (sandbox + brake, no
 injection/validation layer). Pending: 11 API, 12 Deploy.
