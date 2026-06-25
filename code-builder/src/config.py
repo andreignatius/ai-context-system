@@ -5,6 +5,8 @@ import os
 
 from langchain_ollama import ChatOllama
 
+MAX_ATTEMPTS = int(os.getenv("MAX_ATTEMPTS", "3"))
+
 def get_llm() -> ChatOllama:
     # local Ollama chat model
     # lower temperature than the chat agent
