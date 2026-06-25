@@ -12,26 +12,29 @@ _graph = build_graph()                      # built ONCE at startup, reused per 
 
 class BuildRequest(BaseModel):
     request: str
-
+    # optional carry-forward for a HUMAN fix (all empty = a fresh build):
+    spec: str = ""
+    tests: str = ""
+    code: str = ""
+    test_result: dict = {}
+    fix_target: str = ""          # "" fresh | "spec" | "tests" | "code"
+    feedback: str = ""
 
 class BuildResponse(BaseModel):
-    status: str                             # "ok" if it converged autonomously, else "failed"
+    status: str
     spec: str
     code: str
     tests: str
-
-
-@app.get("/health")
-def health():
-    return {"status": "ok"}
-
+    test_result: dict             # so the UI can carry it back on a fix
 
 @app.post("/build", response_model=BuildResponse)
 def build(req: BuildRequest):
-    result = _graph.invoke({"request": req.request})   # one-shot, no human; the judge self-heals
+    state = {"request": req.request, "feedback": req.feedback, "fix_target": req.fix_target}
+    if req.fix_target:            # a human fix -> carry the prior artifacts forward (memory)
+        state.update({"spec": req.spec, "tests": req.tests,
+                      "code": req.code, "test_result": req.test_result})
+    result = _graph.invoke(state, config={"callbacks": [_handler]})
     return BuildResponse(
-        status=result["status"],
-        spec=result["spec"],
-        code=result["code"],
-        tests=result["tests"],
+        status=result["status"], spec=result["spec"], code=result["code"],
+        tests=result["tests"], test_result=result.get("test_result", {}),
     )
