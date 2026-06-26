@@ -5,10 +5,11 @@ from fastapi import FastAPI
 from pydantic import BaseModel
 
 from src.graph import build_graph
+from src.config import get_langfuse_handler
 
 app = FastAPI(title="Code Builder")
 _graph = build_graph()                      # built ONCE at startup, reused per request
-
+_handler = get_langfuse_handler()
 
 class BuildRequest(BaseModel):
     request: str

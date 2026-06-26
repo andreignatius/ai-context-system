@@ -627,6 +627,87 @@ The SPIRIT of both is covered by the sandbox; the textbook forms are genuine GAP
   defense; no input/output validation or refusals; no auth/rate-limit on the API.
 So M8/M9 = PARTIAL - honest "future work", not "done".
 
+### Change 021: Web UI (Streamlit) + human-in-the-loop over HTTP (26-Jun-2026)
+A custom web front-end for the builder, with the human fix-loop working over HTTP. Typed by
+hand. Concept: Lesson 021.
+
+- `src/ui.py`: a Streamlit CHAT UI (st.chat_message bubbles + st.chat_input). Shows a status
+  badge + code + tests + spec; on a STUCK build a fix panel (selectbox spec/tests/code +
+  feedback box) lets the human steer.
+- `src/api.py`: /build now accepts carry-forward (spec/tests/code/test_result) + fix_target +
+  feedback, and returns test_result - so a stuck build can be RESUMED with a human fix. This is
+  the "stateful session API" we'd deferred (v3+).
+- KEY: NO server-side session store needed - the CLIENT (Streamlit `session_state`) holds the
+  build and sends it back with each fix. It is main.py's carry-forward loop, split across two
+  HTTP calls. Reuses the v3 surgical machinery (dispatch + edit-aware agents); the API/UI just
+  expose `fix_target` over the wire.
+- BUG to fix: api.py references `_handler` for the Langfuse callback but never defines it - add
+  `from src.config import get_langfuse_handler` + `_handler = get_langfuse_handler()` or /build
+  NameErrors.
+- Streamlit gotchas (Lesson 021): st.code is the ONLY widget with a copy button; never call
+  st.* in a ternary (its DeltaGenerator return leaks an ugly repr); the C/R dev hotkeys fire on
+  keypress (toolbarMode hides the menu, may not kill them - use the code copy button).
+- PARKED: hosting on a public URL. The real constraint is the LLM, not the app - decouple it
+  (swap get_llm to a cloud LLM, e.g. Groq) and host the lightweight app free (Streamlit
+  Community Cloud / Render-from-Dockerfile). GoDaddy = domains, not app hosting.
+
+### Change 022: DeepInfra wiring - the cloud model is live; <think> strip (26-Jun-2026)
+Decoupled the model: the builder now runs on DeepInfra's hosted Qwen2.5-Coder-32B (cloud GPU), not
+local Ollama. Typed by hand. Concept: Lesson 023 (+ addendum).
+- config.py get_llm(): added an LLM_PROVIDER toggle ("ollama" default | "deepinfra"). DeepInfra
+  branch = ChatOpenAI(model="Qwen/Qwen2.5-Coder-32B-Instruct",
+  base_url="https://api.deepinfra.com/v1/openai", api_key=DEEPINFRA_API_KEY). ONE env var picks
+  WHERE the model runs; graph/agents/judge untouched (the payoff of centralizing get_llm earlier).
+  DEEPINFRA_API_KEY lives in .env (gitignored).
+- GOTCHA: the 32B emits chain-of-thought in <think>...</think> tags that polluted the spec artifact
+  (~2k tokens/call). Fix: _strip_think() regex helper in agents.py, applied at all 4 .content reads
+  (spec/code/tests/judge; BEFORE _extract_code for code/tests). Spec now clean.
+- VERIFIED: `LLM_PROVIDER=deepinfra python -m src.main` one-shot built is_palindrome on the cloud,
+  clean spec, tests pass. Local still works (flag defaults to ollama; nothing breaks until opted in).
+- Run cloud: `LLM_PROVIDER=deepinfra python -m src.main` (key in .env).
+- NEXT: host FastAPI + Streamlit on a free host (Render) with LLM_PROVIDER + DEEPINFRA_API_KEY as env
+  vars -> public URL, no local Ollama. (The Change 021 api.py `_handler` bug is already fixed - line
+  8 imports get_langfuse_handler, line 12 defines _handler. Verified 26-Jun.) Before hosting: run the
+  web stack (uvicorn + streamlit) on DeepInfra locally to confirm the deploy artifact works end-to-end.
+
+### Design note: the backtester domain port (planning) (26-Jun-2026)
+Planned the quant backtester (the capstone's domain port). NO code yet. Full design: capstone.md
+"Domain port: the backtester"; concepts: Lesson 022.
+- ARCHITECTURE: a SEPARATE `backtester-app/` (copy the code-builder skeleton; extract a shared
+  core only after BOTH work - rule of three). "Switch mode" UI = a later product idea, not the start.
+- THE PORT: same graph + judge; agents change role (strategy spec / soundness checks / strategy
+  code / backtest-runner verifier). New layer = market data + engine + metrics + plot.
+- REUSE (Andre's SMU repos, scanned 26-Jun): portfolio-management/ann/backtest.py +
+  simulate_trading.py (engine); quant-trading/market.py + alpha.py + forward_bias_check/ (data,
+  strategy, the look-ahead check); ewmac_performance.csv (results). PORT these in (adapt, not
+  cross-import). ENGINE-FIRST.
+- EVAL = GROUND-TRUTH (Lesson 022): grade AI strategies against Andre's KNOWN-correct results, not
+  self-graded tests. Soundness (ran + no look-ahead via forward_bias_check) + metrics match the
+  reference within tolerance. "correct" != "profitable"; forward-bias prevention is structural.
+
+Next when building: read backtest.py + forward_bias_check/ to plan exactly what to port.
+
+### Design note: hosting the demo - the model/infra split + DeepInfra decision (26-Jun-2026)
+Planned how to put the code-builder on a public URL. NO code yet. Full concept: Lesson 023.
+- THE SPLIT: model (intelligence) vs infra (GPUs). DeepInfra + Modal are INFRA that run OPEN-weight
+  models only (Llama/Qwen). Frontier closed models (GPT/Gemini/Claude) can only be rented from the
+  lab - not self-hostable. So the real axis is open-weight vs frontier-closed, not "DeepInfra vs OpenAI".
+- THE FRONTIER: privacy and cost sit at opposite corners. Privacy: local > Modal > DeepInfra. Cost +
+  effort: local > DeepInfra > Modal. Modal = your own container on rented GPUs (more private, per
+  GPU-second, cold-start tax, ~half-day). DeepInfra = shared API (cheaper, per token, ~20 min). Both
+  pay-as-you-go; the difference is the METER. Local maxes both but can't be publicly hosted.
+- PRICING (26-Jun): DeepInfra Qwen2.5-Coder-32B ~$0.66/1M tok -> ~$0.01/build -> ~$2-5/mo at our
+  volume. Modal A100 ~$3.73/hr, $30/mo free credits cover light use, but cold-start warm-up punishes
+  spiky traffic; never keep a container warm (idle A100 ~$900/mo).
+- QUANT ANGLE: a real shop never sends live alpha to a shared API (the strategy IS the asset) -> local
+  -first / self-host is the institutional default, a good portfolio narrative.
+- DECISION: ship on DeepInfra FIRST (3-line get_llm() swap to ChatOpenAI -> DeepInfra endpoint;
+  unblocks a public URL), then add Modal LATER as a documented "v2: self-hosted inference" chapter.
+  The SEQUENCE (ship fast, then deliberately self-host for data control) is itself the strongest signal.
+
+Next when building: sign up at DeepInfra, get a key, swap get_llm(), then pick a free app host
+(Render / HF Spaces) for the FastAPI + Streamlit front.
+
 ### Next Steps
 - [x] Install LangGraph
 - [ ] Set up Langfuse (cloud or self-hosted) and confirm a trace appears   <- still open
@@ -646,7 +727,13 @@ So M8/M9 = PARTIAL - honest "future work", not "done".
 - [x] C / M12: containerized (Dockerfile + .dockerignore) - runs in Docker, talks to host Ollama (Change 018)
 - [x] C: Langfuse trace CONFIRMED for the foundations agent (Change 019)
 - [x] wire Langfuse into the CAPSTONE -> multi-agent build trace observed (Change 020). C COMPLETE.
-- [ ] (polish/optional) README portfolio pass; per-agent models; M8 tool-calling + M9 hardening
+- [x] README portfolio pass (Overview/Stack/Features/structure/run sections)
+- [x] Web UI (Streamlit chat) + human-in-the-loop over HTTP (Change 021) - the v3+ stateful session
+- [ ] (parked) PUBLIC HOSTING: decouple the model (cloud LLM) -> free host (Streamlit Cloud / Render)
+- [x] DeepInfra wiring DONE (Change 022, Lesson 023): get_llm() LLM_PROVIDER toggle + _strip_think; cloud model verified live. Modal = later "v2: self-hosted" chapter
+- [x] api.py _handler bug (flagged Change 021) - already fixed; verified 26-Jun (line 8 import + line 12 define)
+- [ ] (next) PUBLIC HOST: verify web stack (uvicorn + streamlit) on DeepInfra locally, then deploy to Render with LLM_PROVIDER=deepinfra + DEEPINFRA_API_KEY env vars
+- [ ] (parked) per-agent models; M8 tool-calling + M9 hardening; backtester domain port
 - [ ] restore strong QA_PROMPT for production (temp kept at 0.5 by choice; the loose QA prompt was a fixture)
 - [ ] (later) PER-AGENT models (the Lesson 016 model-ceiling fix: strong coder, terse orchestrator)
 

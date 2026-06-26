@@ -1500,3 +1500,168 @@ Tracing makes the agent black box visible; with LangChain/LangGraph you attach O
 callback to the top-level invoke and it propagates to every node + every agent LLM call, so a
 whole multi-agent build (including the self-healing judge) shows up as a nested, timed,
 token-counted tree.
+
+---
+
+## Lesson 021: a web UI for the agent - borrow the framework; human-in-the-loop over HTTP (26-Jun-2026)
+(From building src/ui.py - a Streamlit front-end for the code-builder.)
+
+### Borrow the framework, build YOUR view (extends Lesson 018)
+A browser only runs HTML/CSS/JS - the question is whether YOU write it or a tool generates it.
+Streamlit (or Gradio) lets you write PYTHON describing widgets; it ships + runs its own React
+frontend that renders them. Same idea as matplotlib for charts: you work ABOVE the JS layer.
+For an AI demo, that is exactly right - you build agents, not frontends. Hand-writing React is
+off-thesis; reinventing a chat product (open-webui) is copy-paste. Streamlit threads the needle:
+you design YOUR view (status badge, spec/tests/code, the judge's decisions) - things a generic
+chat could never show - without a line of JS.
+
+### Human-in-the-loop over HTTP, WITHOUT server sessions
+The API is request/response - it cannot pause mid-build to ask the human "fix which?". The fix:
+the CLIENT holds the build state and sends it back with the human's correction. /build accepts
+carry-forward (spec/tests/code/test_result) + fix_target + feedback; the UI keeps the build in
+Streamlit `session_state` and re-POSTs it with the fix. The server stays STATELESS; the loop
+lives in the client. This is main.py's carry-forward (Lesson 003) split across two HTTP calls -
+and it turns a one-shot API into an interactive one with no session store. It reuses the v3
+surgical agents untouched - the UI just picks fix_target via a dropdown instead of a prompt.
+
+### Streamlit gotchas (tactical, learned the hard way)
+- st.code is the ONLY built-in widget with a COPY button - render copyable text (spec, code) as
+  st.code, not st.text/st.write/st.markdown.
+- NEVER call an st.* function inside a ternary or as an expression: each returns a DeltaGenerator,
+  and when that value is displayed you get an ugly `DeltaGenerator(...)` + docstring dump. Use
+  plain if/else STATEMENTS, one st.* call per line.
+- st.chat_message + st.chat_input give the ChatGPT look (bubbles + a docked input) for ~free.
+- The C/R developer hotkeys fire on a bare keypress (C = clear cache); `toolbarMode="minimal"`
+  hides the menu but may not disable them - the code copy button avoids Cmd+C entirely.
+
+### Hosting (parked) - the constraint is the MODEL, not the app
+The app is featherweight; qwen2.5-coder is the heavy/expensive part. To host publicly: DECOUPLE
+the model - swap get_llm to a cloud LLM (Groq free tier, OpenAI-compatible) - then the app hosts
+free on Streamlit Community Cloud or Render (from the Dockerfile). A registrar (GoDaddy) sells a
+DOMAIN; it does not host the app. Self-hosting Ollama needs a big-RAM/GPU box ($$$, slow on CPU).
+
+### One-sentence summary
+Build the agent's UI by BORROWING a Python framework (Streamlit) that emits the JS for you, and
+get human-in-the-loop over HTTP for free by having the CLIENT hold the build state and re-POST it
+with the human's fix - a stateless server, an interactive UI, reusing the v3 surgical agents.
+
+---
+
+## Lesson 022: the domain-port pattern + the two flavors of "eval" (26-Jun-2026)
+(From planning the backtester - the capstone's quant domain port.)
+
+### The domain-port pattern: same skeleton, new roles
+A proven multi-agent skeleton (graph + dispatcher + self-healing judge + edit-aware agents +
+a verifier) PORTS to a new domain by swapping the agents' ROLES and the VERIFIER, keeping the
+graph. code-builder -> backtester:
+- orchestrator: code spec -> strategy spec ; coder: code -> strategy code
+- QA(tests) -> soundness checks ; sandbox(pytest) -> backtest RUNNER (data + engine + metrics)
+- judge: unchanged.
+The only genuinely NEW part is the domain's data/metrics layer (market data + a backtest engine
++ Sharpe/drawdown). Build it as a SEPARATE app first - do NOT extract a shared "core" until BOTH
+apps exist and you can see the real shared shape (rule of three). A "switch mode in the UI" is a
+product unification for later, not a starting architecture (it couples two domains in one place).
+
+### The two flavors of EVAL (this is the key concept)
+- SELF-GRADED (what M10 built): the system generates its OWN tests; "pass" = passes its own
+  tests. Cheap, measures convergence - but the tests can be WRONG (no external truth; we saw the
+  QA write bad tests). It scores "did it converge", not "is it correct vs reality".
+- GROUND-TRUTH / golden-set (the stronger form): curated inputs with HUMAN-VERIFIED correct
+  outputs; "correct" = MATCHES the reference within a tolerance. Needs a reference set (work to
+  build), but it grades against reality, not the system's own opinion.
+
+### Your PRIOR work can be the ground truth
+The backtester wants ground-truth eval (backtests have no simple pass/fail, AND the reference
+exists): Andre's SMU repos provide BOTH the engine to reuse (portfolio-management/ann/backtest.py;
+quant-trading/forward_bias_check) AND the answer key (ewmac_performance.csv etc). So the eval =
+ask the AI to build a KNOWN strategy -> run it -> check (a) SOUNDNESS (ran, valid positions, no
+look-ahead) + (b) metrics/equity MATCH the known reference within tolerance. A deviation = a real
+bug (look-ahead, wrong signal) -> the judge routes the fix. Note: "correct" != "profitable" - the
+verifier checks soundness, never profit (else the agents curve-fit).
+
+### One-sentence summary
+A proven agent skeleton ports to a new domain by swapping roles + the verifier (keeping the
+graph), built as a separate app until a shared core earns extraction; and "eval" has two flavors
+- self-graded (own tests, cheap, can be wrong) vs ground-truth (a human-verified answer key) -
+where the backtester wants ground-truth, and your past quant work IS that answer key.
+
+## Lesson 023: the model/infra split + the privacy-vs-cost frontier (hosting the demo) (26-Jun-2026)
+(From planning how to put the code-builder on a public URL - DeepInfra vs Modal.)
+
+### Two layers people conflate: the MODEL vs the INFRA
+- MODEL = the intelligence (GPT-5, Gemini, Claude, Llama, Qwen).
+- INFRA = the GPUs it runs on (DeepInfra, Modal, your laptop).
+DeepInfra and Modal are INFRA that run OPEN-WEIGHT models only (Llama/Qwen/DeepSeek/Mistral - weights
+are public, so anyone can host them). The frontier CLOSED models (GPT/Gemini/Claude) are never
+released - you can ONLY rent them from the lab; you cannot self-host them at any price. So
+"DeepInfra vs OpenAI" is a category error: the real axis is open-weight vs frontier-closed, and
+DeepInfra is just one cheap way to run the open ones.
+
+### Why people still pay for the closed frontier
+- Top-end capability (hardest reasoning / agentic / long-context still leads).
+- Reliability, SLA, ecosystem (structured outputs, batch, fine-tuning, multimodal, support).
+- Token cost is usually a ROUNDING ERROR vs engineer-time + the value of the right answer. You pay
+  up for edge exactly when the edge moves the P&L - and you literally cannot replicate it (the moat).
+
+### The privacy-vs-cost frontier (the key idea)
+Among cloud options, privacy and cost-efficiency sit at OPPOSITE corners - no single point maxes both.
+- PRIVACY (best -> worst): local Ollama > Modal > DeepInfra.
+  - Modal = your OWN container on rented GPUs; the company isn't a model vendor harvesting prompts
+    (compute rental, like a cloud VM) -> more private than a shared API.
+  - DeepInfra = shared inference API; "no training" by default + short (~30-day) retention, but their
+    servers do see the prompt.
+- COST + EFFORT (cheapest/easiest -> most): local > DeepInfra > Modal.
+The point that maxes BOTH is local - which can't be publicly hosted (your laptop isn't a server).
+So picking a cloud = picking WHERE on the privacy-vs-cost frontier you sit. Modal = privacy-tilted
+corner; DeepInfra = cost-tilted corner. The extra Modal cost is the RISK PREMIUM you pay for data
+control - worth it only when the prompt is sensitive.
+
+### Why this matters specifically for a quant
+A real quant shop will NEVER send live alpha signals to a shared API - the strategy IS the asset.
+That is why finance runs open models on its own infra (the Modal pattern) or on-prem. So local-first
+/ self-host is not just a learning convenience - it is the institutional default in the industry.
+Good portfolio narrative: "built it local-first because in finance, data control isn't optional."
+
+### Pricing (checked 26-Jun-2026)
+- DeepInfra (per TOKEN): Qwen2.5-Coder-32B ~$0.66 / 1M tokens. One build ~30k tokens -> ~$0.01/build
+  -> ~$2-5/mo at portfolio volume. Always warm, no idle/warm-up burn, scales smoothly.
+- Modal (per GPU-SECOND): A100-40GB ~$0.001036/s (~$3.73/hr), $30/mo free credits. Light use is ~$0
+  within credits, BUT you pay ~30-60s cold-start warm-up each time it wakes from scale-to-zero, which
+  punishes spiky/interactive demo traffic. LANDMINE: never set min-containers=1 to dodge cold starts -
+  idle A100 ~ $900/mo.
+- Both are PAY-AS-YOU-GO. The difference is the METER (tokens vs GPU-seconds), not the billing model.
+
+### Setup + control
+- DeepInfra (~20 min): sign up -> key -> swap get_llm() to ChatOpenAI(base_url=DeepInfra, api_key) -
+  it is an OpenAI-compatible endpoint, so the change is localized to get_llm() (everything downstream
+  rides through it untouched - the payoff of centralizing the model earlier). Control: FULL over your
+  app, MENU over the model (their catalog only), ZERO over GPU/weights/version. = "electricity from
+  the grid".
+- Modal (~half day): write a NEW Modal app file (image + GPU + a vLLM/Ollama web endpoint), cache
+  weights in a volume, modal deploy -> a URL, then point get_llm() base_url at it. Control: FULL over
+  app AND model serving (ANY open model, your own fine-tuned weights, GPU type, quantization,
+  scaling) - but you OWN the ops (cold starts, OOM, cost). = "your own generator".
+
+### The decision (and why the SEQUENCE is the real signal)
+Ship on DeepInfra FIRST - a working public URL is the portfolio win, and the 3-line get_llm() swap
+removes the "user must run Ollama locally" blocker that stops hosting anywhere. Add Modal LATER as a
+documented "v2: self-hosted inference" chapter. The PROGRESSION (ship fast, then deliberately move
+the model onto your own GPU for data control) shows judgment + range that either skill alone doesn't -
+and it maps onto the "in finance, data control isn't optional" story.
+
+### One-sentence summary
+Model (intelligence) and infra (GPUs) are different layers - DeepInfra/Modal only run OPEN-weight
+models - and among cloud hosts privacy and cost sit at opposite corners (local > Modal > DeepInfra on
+privacy; the reverse on cost), so ship the demo on DeepInfra now (cheap, ~20 min, less private) and
+keep Modal as the later, deliberate "self-hosted for data control" upgrade.
+
+### Addendum (26-Jun): migration isn't always drop-in
+Wiring DeepInfra was a ~3-line get_llm() change (centralizing the model earlier paid off), BUT
+swapping local 7B -> DeepInfra's Qwen-32B changed the OUTPUT FORMAT: the 32B emits chain-of-thought
+in `<think>...</think>` tags that polluted the spec artifact (and cost ~2k tokens/call). Fix: a
+`_strip_think()` regex helper applied at EVERY `.content` read (spec/code/tests/judge - and before
+`_extract_code` for code/tests, so a stray fence inside the reasoning can't fool extraction). The
+lesson: same architecture + a different model = possible output-SHAPE drift, so budget for output
+post-processing when you change providers - "OpenAI-compatible endpoint" means the API matches, not
+that the model behaves identically. Built + verified the swap with a toggle (LLM_PROVIDER=ollama
+default | deepinfra), so local still runs unchanged. (Change 022.)

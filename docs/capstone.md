@@ -268,3 +268,55 @@ HONEST M8/M9 gaps (PARTIAL, not "done" - 26-Jun):
 FUTURE WORK: per-agent models (Lesson 016/017); real tool-calling (M8); a hardened sandbox +
 injection/validation + auth (M9); a stateful session API (human intervention over HTTP); the
 backtester domain port.
+
+UPDATE (26-Jun, Change 021): a WEB UI (`src/ui.py`, Streamlit chat) + human-in-the-loop OVER
+HTTP is now built - so "a stateful session API" above is DONE: /build carries the build forward
+(spec/tests/code + fix_target + feedback), and the CLIENT (Streamlit session_state) holds the
+state and re-POSTs it with the human's fix, so the server stays STATELESS. Reuses the v3
+surgical agents. (Lesson 021.) Remaining future work: public hosting (decouple the model -> a
+cloud LLM -> free host), plus the per-agent / tool-calling / hardening / backtester items above.
+
+## Domain port: the backtester   [DESIGNED 26-Jun]
+The thesis was always that the multi-agent skeleton ports to a quant backtester. Now planned -
+and grounded in Andre's SMU repos, which supply BOTH the engine to reuse AND the eval ground
+truth. Concepts: Lesson 022.
+
+ARCHITECTURE: a SEPARATE `backtester-app/` (copy the code-builder skeleton; extract a shared
+`core/` only AFTER both apps work - rule of three). A "switch mode" UI is a later product
+unification, not the starting point.
+
+THE PORT (same graph + judge; agents change ROLE):
+- orchestrator -> strategy SPEC (instrument, entry/exit rules, params, what to report)
+- QA -> SOUNDNESS checks ("SMA-cross signal is +1 when fast>slow"; "no NaN equity")
+- coder -> strategy CODE (fits the backtest-engine interface)
+- sandbox -> BACKTEST RUNNER (fetch data, run the engine, compute metrics + validity)
+- judge -> routes the fix (code/spec/checks), 3 rounds then human - unchanged
+NEW layer (the only real addition): market data (yfinance/CSV) + the backtest ENGINE + metrics
+(Sharpe / max-drawdown / turnover) + the equity-curve plot.
+
+QUANT RIGOR (the differentiators):
+- FORWARD-BIAS prevention is STRUCTURAL - the engine steps bar-by-bar, the strategy sees only
+  PAST data; the verifier asserts it. Reuse Andre's existing forward_bias_check.
+- "correct" != "profitable" - the verifier checks SOUNDNESS (ran, valid positions, no
+  look-ahead), NOT profit. A losing strategy that runs correctly is status=ok. The judge fixes
+  BUGS, never "bad" strategies (else it curve-fits).
+- transaction costs + slippage in the engine (even flat bps) = honesty; the metrics REPORT is
+  informational, the GATE is soundness.
+
+EVAL = GROUND-TRUTH (Lesson 022): unlike the code-builder's self-graded eval, grade the AI's
+strategy against KNOWN-CORRECT results. Andre's SMU repos ARE the answer key. Ask the AI to build
+a known strategy -> run it -> check (a) soundness + (b) metrics/equity match the reference within
+tolerance. A deviation = a real bug -> judge routes the fix.
+
+REUSE (engine-first; SMU repos scanned 26-Jun): port Andre's proven code INTO backtester-app/
+(adapt, do NOT cross-import from ~/Documents/SMU MQF/):
+- portfolio-management/ann/backtest.py + simulate_trading.py + portfolio_optimization.py = engine
+- quant-trading/market.py (data) + alpha.py (strategy) + forward_bias_check/ = data + look-ahead check
+- ewmac_performance.csv etc = the ground-truth answer key for eval
+BUILD ORDER: 1) port the engine + forward-bias check; 2) the agents on top (reuse the graph);
+3) the Streamlit UI.
+
+UI: Streamlit (the standard for quant dashboards): st.sidebar + st.download_button (CSV / report
+/ .py), st.plotly_chart / st.line_chart (equity curve), a period selectbox (1m/1y/2y),
+st.cache_data for the data fetch. NOT Vercel (that hosts JS/Next.js, not Streamlit; host on
+Streamlit Cloud / Render).

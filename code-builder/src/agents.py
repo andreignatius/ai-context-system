@@ -11,6 +11,8 @@ from .config import get_llm
 from .sandbox import run_tests
 from .state import BuildEvent
 
+import re
+
 llm = get_llm()
 
 # ORCHESTRATOR_PROMPT = (
@@ -91,6 +93,11 @@ def _extract_code(text: str) -> str:
         return "\n".join(lines).strip()
     return text
 
+def _strip_think(text: str) -> str:
+    # some models (the 32B coder on DeepInfra) emit chain-of-thought in
+    # <think>...</think> tags; keep only the answer after it
+    return re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL).strip()
+
 
 def write_spec(state) -> dict:
     """ORCHESTRATOR (isolated context): request -> spec.
@@ -112,7 +119,7 @@ def write_spec(state) -> dict:
         print("[orchestrator] wrote spec")
 
     messages = [SystemMessage(content=ORCHESTRATOR_PROMPT), HumanMessage(content=task)]
-    spec = llm.invoke(messages).content
+    spec = _strip_think(llm.invoke(messages).content)
     return {"spec": spec, "ledger": [BuildEvent("orchestrator", "spec", spec)]}
 
 
@@ -142,7 +149,7 @@ def write_code(state) -> dict:
         SystemMessage(content=CODER_PROMPT),
         HumanMessage(content=task),
     ]
-    code = _extract_code(llm.invoke(messages).content)
+    code = _extract_code(_strip_think(llm.invoke(messages).content))
     print("[coder] wrote code")
     return {"code": code, "ledger": [BuildEvent("coder", "code", code)]}
 
@@ -166,7 +173,7 @@ def write_tests(state) -> dict:
             task += f"\n\nIMPORTANT human feedback about the TESTS - apply it:\n{state['feedback']}"
         print("[qa] wrote tests")
     messages = [SystemMessage(content=QA_PROMPT), HumanMessage(content=task)]
-    tests = _extract_code(llm.invoke(messages).content)
+    tests = _extract_code(_strip_think(llm.invoke(messages).content))
     return {"tests": tests, "ledger": [BuildEvent("qa", "tests", tests)]}
 
 
@@ -199,7 +206,7 @@ def judge(state) -> dict:
     
     task = (f"SPEC:\n{state['spec']}\n\nTESTS:\n{state['tests']}\n\n"
             f"CODE:\n{state['code']}\n\nFAILURE:\n{failures}")
-    reply = llm.invoke([SystemMessage(content=JUDGE_PROMPT), HumanMessage(content=task)]).content
+    reply = _strip_think(llm.invoke([SystemMessage(content=JUDGE_PROMPT), HumanMessage(content=task)]).content)
     culprit, reason = _parse_verdict(reply)
     print(f"[judge] round {attempts}: -> {culprit} ({reason})")
     return {"fix_target": culprit, "feedback": reason, "attempts": attempts}

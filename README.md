@@ -82,6 +82,7 @@ ai-context-system/
 │       ├── graph.py        # dispatcher + self-healing judge loop
 │       ├── main.py         # CLI: interactive build + human intervention
 │       ├── api.py          # FastAPI service: POST /build (M11)
+│       ├── ui.py           # Streamlit web UI (chat + human-in-the-loop fix)
 │       └── evals.py        # eval harness: autonomous pass-rate (M10)
 # generated, gitignored: chroma_db/, checkpoints.sqlite, code-builder/.env
 ```
@@ -105,6 +106,9 @@ OLLAMA_MODEL=qwen2.5-coder:latest python -m src.main
 
 # API service - interactive Swagger UI at http://localhost:8000/docs
 uvicorn src.api:app --reload
+
+# web UI - Streamlit chat with human-in-the-loop fix (needs the API running)
+streamlit run src/ui.py
 
 # eval harness - autonomous pass-rate over a fixed task suite
 OLLAMA_MODEL=qwen2.5-coder:latest python -m src.evals
