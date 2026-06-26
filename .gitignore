@@ -33,6 +33,8 @@ langgraph-app/venv/
 Thumbs.db
 
 # Logs and databases
+logs/*
+*/logs/*
 *.log
 *.db
 *.db-shm

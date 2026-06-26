@@ -200,9 +200,15 @@ def judge(state) -> dict:
     failures = state["test_result"]["failures"]
 
     if _is_load_error(failures):
-        print(f"[judge] round {attempts}: test file did not LOAD -> tests (mechanical)")
-        return {"fix_target": "tests", "attempts": attempts,
-                "feedback": f"The test file failed to load:\n{failures}"}
+        # print(f"[judge] round {attempts}: test file did not LOAD -> tests (mechanical)")
+        # return {"fix_target": "tests", "attempts": attempts,
+        #         "feedback": f"The test file failed to load:\n{failures}"}
+        # a collection error can be the CODE's fault (solution.py won't import) or the TESTS'.
+        # trace the origin: an error raised from solution.py is the coder's, not the QA's.
+        culprit = "code" if "solution.py:" in failures else "tests"
+        print(f"[judge] round {attempts}: build did not LOAD -> {culprit} (mechanical)")
+        return {"fix_target": culprit, "attempts": attempts,
+                "feedback": f"The build failed to load:\n{failures}"}
     
     task = (f"SPEC:\n{state['spec']}\n\nTESTS:\n{state['tests']}\n\n"
             f"CODE:\n{state['code']}\n\nFAILURE:\n{failures}")
