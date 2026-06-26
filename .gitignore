@@ -45,6 +45,7 @@ Thumbs.db
 
 # Private (not for sharing)
 docs/profile.md
+docs/*
 
 # Ollama models (HUGE — don't commit!)
 **/models/
