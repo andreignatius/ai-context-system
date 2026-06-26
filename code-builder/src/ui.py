@@ -15,7 +15,8 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # bridge Streamlit Cloud secrets -> env BEFORE importing src (config reads LLM_PROVIDER at import)
 try:
-    for _k in ("LLM_PROVIDER", "DEEPINFRA_API_KEY"):
+    for _k in ("LLM_PROVIDER", "DEEPINFRA_API_KEY",
+               "LANGFUSE_PUBLIC_KEY", "LANGFUSE_SECRET_KEY", "LANGFUSE_HOST"):
         if _k in st.secrets:
             os.environ[_k] = str(st.secrets[_k])
 except Exception:
