@@ -12,6 +12,9 @@ class BacktestState(TypedDict):
     attempts: int
     feedback: str
     fix_target: str         # "" fresh | "code" | "spec"
+    prices: object          # price Series the build runs on (UI-supplied; falls back to default)
+    ticker: str
+    period: str
     ledger: Annotated[list, add]
 
 

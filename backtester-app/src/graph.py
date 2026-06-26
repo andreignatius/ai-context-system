@@ -6,13 +6,17 @@ from .data import load_prices
 from .config import MAX_ATTEMPTS
 
 _cache = {}
-def _prices():
-    if "p" not in _cache:            # load once, on first run (not at import)
-        _cache["p"] = load_prices("SPY", "2y")
-    return _cache["p"]
+def _prices(ticker="SPY", period="2y"):
+    key = (ticker, period)           # load once per (ticker, period), on first run (not at import)
+    if key not in _cache:
+        _cache[key] = load_prices(ticker, period)
+    return _cache[key]
 
 def run_node(state):
-    result = run_strategy(state["strategy_code"], _prices())
+    prices = state.get("prices")     # UI supplies the chosen ticker/period; CLI + evals use the default
+    if prices is None:
+        prices = _prices()
+    result = run_strategy(state["strategy_code"], prices)
     print(f"[sandbox] passed: {result['passed']}")
     return {"run_result": result,
             "status": "ok" if result["passed"] else "failed",
