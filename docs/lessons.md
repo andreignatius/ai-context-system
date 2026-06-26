@@ -1665,3 +1665,57 @@ lesson: same architecture + a different model = possible output-SHAPE drift, so 
 post-processing when you change providers - "OpenAI-compatible endpoint" means the API matches, not
 that the model behaves identically. Built + verified the swap with a toggle (LLM_PROVIDER=ollama
 default | deepinfra), so local still runs unchanged. (Change 022.)
+
+## Lesson 024: shipping it - collapsing to one app, and four deploy gotchas (26-Jun-2026)
+(From taking the code-builder from localhost to a public URL: https://code-builder.streamlit.app.)
+
+### Collapse to the simplest deployable shape
+A two-process demo (FastAPI API + Streamlit UI over HTTP) is great locally but DOUBLES the hosting
+problem. For a portfolio demo, collapse to ONE process: the UI imports the graph and runs it
+in-process (run_build) - no separate API to host. Keep the API + Dockerfile in the repo for the
+"also a service" story, but deploy the single app. Reliability > impressiveness: a working URL beats
+an impressive broken one. (The client/server split stays documented as a future "v2 infra" chapter.)
+
+### requirements.txt is your deploy CONTRACT - test it in a clean venv
+The host builds its environment ONLY from requirements.txt, in a clean venv. So test it the SAME way
+BEFORE deploying: fresh venv -> pip install -r requirements.txt -> run. This caught a dep that was
+MISSING from the list but PRESENT in the dev env (langfuse.langchain needs the umbrella `langchain`,
+not just langchain-core; openwebui-env had it, a clean venv did not). Far cheaper to find locally than
+in a failed cloud build. Cross-check pins against a known-working sibling (langgraph-app/requirements.txt).
+
+### The four deploy gotchas (each cost one redeploy)
+1. SECOND PROCESS: Streamlit Cloud runs one app, not two -> in-process collapse (above).
+2. MISSING DEP hidden by the dev env -> the clean-venv test (above).
+3. PRIVATE REPO: the host couldn't see it. Fix = make the repo PUBLIC (after verifying no secrets are
+   tracked). Chose public over granting Streamlit account-wide private OAuth - least privilege + better
+   for a portfolio (the repo IS the artifact).
+4. requirements DISCOVERY: the host reads requirements.txt at the REPO ROOT; ours was in a subdir ->
+   copy it to the root. (Subdir apps need the dep file where the host LOOKS, not where the code lives.)
+
+### Framework vs HOST vs AUTH - three different layers
+"Should I use X in production?" usually conflates three things:
+- the FRAMEWORK (Streamlit the library) - fine anywhere, incl. production.
+- the HOST (Streamlit Community Cloud, the free tier) - a hobby host; production self-hosts or pays.
+- the AUTH model (the host's GitHub OAuth) - the free host wanted account-wide read/write to ALL repos
+  (OAuth is all-or-nothing by scope, not per-repo). For production you'd self-host (no third party
+  touches your code) OR use fine-grained access (a GitHub App per repo, or a deploy key / CI token).
+LEAST PRIVILEGE: never hand a SaaS account-wide access just to deploy one repo. Same data-control theme
+as the model layer (Lesson 023): sensitive model inputs -> self-host the model; sensitive code ->
+self-host the app + scoped access. Default to self-host + least-privilege when data or code is sensitive.
+
+### A public demo spends YOUR money
+The deployed app calls DeepInfra on YOUR key, so every stranger's build bills you (~$0.01/build). Fine
+for a pennies-scale demo, but know it is your meter - pause the app or rate-limit if traffic spikes.
+(And the free tier sleeps after ~15 min idle: first visit ~30s cold start.)
+
+### Public != writable
+Making the repo public grants the world READ only. Nobody can push to your branch without being a
+collaborator; outsiders can only fork or open a PR (which you must merge). So no branch protection is
+needed for security on a solo repo - the real public-repo risk is committed SECRETS (handled: .env
+gitignored, only .env.example tracked). Enable GitHub secret-scanning push protection as a cheap net.
+
+### One-sentence summary
+Ship the simplest deployable shape (one in-process app), treat requirements.txt as a contract you test
+in a clean venv, expect host-specific gotchas (one process, dep discovery at the repo root, repo
+visibility), separate framework/host/auth and default to least-privilege, and remember a public demo
+runs on your key and grants the world read-only.

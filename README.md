@@ -1,5 +1,7 @@
 # AI Context Management System
 
+> **🚀 Live demo:** [code-builder.streamlit.app](https://code-builder.streamlit.app) — the capstone multi-agent code-builder, running live on DeepInfra (Qwen2.5-Coder-32B). Type a function request and watch the orchestrator → QA → coder → judge loop build and self-verify it. *(Free tier: first load after idle takes ~30s to wake.)*
+
 ## Overview
 An in-house AI system for managing LLM context using LangGraph, with a focus on **Write, Select, Compress, Isolate** strategies. Built for local execution with Ollama.
 

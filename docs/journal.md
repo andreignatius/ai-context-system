@@ -15,7 +15,7 @@ Build an in-house AI system with LangGraph for managing context, with guardrails
 #### Ollama & Open WebUI
 - Models installed: `deepseek-r1:latest`, `llama3:latest`, `llama3.2:latest`
 - Open WebUI running at: `http://localhost:8080`
-- Database location: `/Users/andre/Documents/openwebui-env/lib/python3.11/site-packages/open_webui/data/webui.db`
+- Database location: `<openwebui-env>/lib/python3.11/site-packages/open_webui/data/webui.db`
 
 #### Learning Notes
 - Context engineering = managing what goes into the LLM's "short-term memory"
@@ -670,6 +670,32 @@ local Ollama. Typed by hand. Concept: Lesson 023 (+ addendum).
   8 imports get_langfuse_handler, line 12 defines _handler. Verified 26-Jun.) Before hosting: run the
   web stack (uvicorn + streamlit) on DeepInfra locally to confirm the deploy artifact works end-to-end.
 
+### Change 023: DEPLOYED - the code-builder is live on a public URL (26-Jun-2026)
+The capstone is now public at https://code-builder.streamlit.app - a single Streamlit app running the
+multi-agent build IN-PROCESS on DeepInfra. Typed by hand. Concept: Lesson 024.
+- SHAPE: collapsed the two-process demo (FastAPI API + Streamlit-over-HTTP) into ONE Streamlit app for
+  hosting. ui.py now imports build_graph and calls it in-process (run_build) instead of POSTing to the
+  API; @st.cache_resource builds the graph once. api.py + Dockerfile stay in the repo (the "also a
+  service" story), just not in the deployed path.
+- HOST: Streamlit Community Cloud (free), auto-deploys from the GitHub repo on push. Secrets
+  (LLM_PROVIDER, DEEPINFRA_API_KEY, LANGFUSE_*) set in the Cloud UI; ui.py bridges them
+  st.secrets -> os.environ BEFORE importing src (config reads LLM_PROVIDER at import time).
+- FOUR deploy gotchas hit + fixed (all written up in Lesson 024):
+  1. SECOND PROCESS: Streamlit Cloud runs one app, not two -> in-process collapse.
+  2. MISSING DEP: the clean-venv test caught that langfuse.langchain needs the umbrella `langchain`
+     (not just langchain-core) - hidden locally because openwebui-env had it; the Cloud's clean build
+     would have failed. Cross-checked pins against langgraph-app/requirements.txt.
+  3. PRIVATE REPO: Streamlit Cloud couldn't see it -> made the repo PUBLIC (least-privilege: avoided
+     granting Streamlit account-wide private OAuth; better for a portfolio anyway). No secrets tracked
+     (verified: git ls-files shows only .env.example).
+  4. requirements DISCOVERY: Streamlit Cloud reads requirements.txt at the REPO ROOT, but ours lived in
+     code-builder/ -> copied it to the root.
+- HEADS-UP: the public app spends Andre's DeepInfra tokens (~$0.01/build); free tier sleeps after
+  ~15 min idle (first hit ~30s cold start). Loose end: requirements.txt now duplicated (root +
+  code-builder/) - harmless.
+- MILESTONE: full arc done - local Ollama -> DeepInfra -> in-process app -> GitHub -> public URL. A
+  clickable portfolio artifact.
+
 ### Design note: the backtester domain port (planning) (26-Jun-2026)
 Planned the quant backtester (the capstone's domain port). NO code yet. Full design: capstone.md
 "Domain port: the backtester"; concepts: Lesson 022.
@@ -732,7 +758,7 @@ Next when building: sign up at DeepInfra, get a key, swap get_llm(), then pick a
 - [ ] (parked) PUBLIC HOSTING: decouple the model (cloud LLM) -> free host (Streamlit Cloud / Render)
 - [x] DeepInfra wiring DONE (Change 022, Lesson 023): get_llm() LLM_PROVIDER toggle + _strip_think; cloud model verified live. Modal = later "v2: self-hosted" chapter
 - [x] api.py _handler bug (flagged Change 021) - already fixed; verified 26-Jun (line 8 import + line 12 define)
-- [ ] (next) PUBLIC HOST: verify web stack (uvicorn + streamlit) on DeepInfra locally, then deploy to Render with LLM_PROVIDER=deepinfra + DEEPINFRA_API_KEY env vars
+- [x] PUBLIC HOST DONE (Change 023, Lesson 024): LIVE at https://code-builder.streamlit.app - single in-process Streamlit app on Streamlit Community Cloud (not Render), DeepInfra-backed, repo made public
 - [ ] (parked) per-agent models; M8 tool-calling + M9 hardening; backtester domain port
 - [ ] restore strong QA_PROMPT for production (temp kept at 0.5 by choice; the loose QA prompt was a fixture)
 - [ ] (later) PER-AGENT models (the Lesson 016 model-ceiling fix: strong coder, terse orchestrator)

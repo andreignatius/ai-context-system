@@ -309,7 +309,7 @@ a known strategy -> run it -> check (a) soundness + (b) metrics/equity match the
 tolerance. A deviation = a real bug -> judge routes the fix.
 
 REUSE (engine-first; SMU repos scanned 26-Jun): port Andre's proven code INTO backtester-app/
-(adapt, do NOT cross-import from ~/Documents/SMU MQF/):
+(adapt, do NOT cross-import from my SMU coursework repos):
 - portfolio-management/ann/backtest.py + simulate_trading.py + portfolio_optimization.py = engine
 - quant-trading/market.py (data) + alpha.py (strategy) + forward_bias_check/ = data + look-ahead check
 - ewmac_performance.csv etc = the ground-truth answer key for eval
