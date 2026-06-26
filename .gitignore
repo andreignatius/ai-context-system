@@ -68,3 +68,6 @@ docs/*
 *.pth
 *.pt
 *.onnx
+
+# Claude
+.claude/*
