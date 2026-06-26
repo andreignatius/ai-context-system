@@ -93,10 +93,20 @@ def _extract_code(text: str) -> str:
         return "\n".join(lines).strip()
     return text
 
+# def _strip_think(text: str) -> str:
+#     # some models (the 32B coder on DeepInfra) emit chain-of-thought in
+#     # <think>...</think> tags; keep only the answer after it
+#     return re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL).strip()
 def _strip_think(text: str) -> str:
-    # some models (the 32B coder on DeepInfra) emit chain-of-thought in
-    # <think>...</think> tags; keep only the answer after it
-    return re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL).strip()
+    """Remove chain-of-thought. Handles a well-formed <think>...</think>, an UNCLOSED <think>
+    (some models reason without closing it), and reasoning that precedes a code fence."""
+    if "</think>" in text:
+        text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL)
+    elif "<think>" in text:
+        i = text.find("```")                       # unclosed: keep from the code fence if there is one,
+        text = text[i:] if i != -1 else re.sub(r"<think>.*$", "", text, flags=re.DOTALL)  # else drop it
+    return text.strip()
+
 
 
 def write_spec(state) -> dict:
