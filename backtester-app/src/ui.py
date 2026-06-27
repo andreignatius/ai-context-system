@@ -17,7 +17,8 @@ except Exception:
 import pandas as pd
 from src.graph import build_run_graph
 from src.agents import classify, write_spec, extract_legs, _leg_label, is_multi_asset_position, extract_pair_tickers
-from src.runner import _load_strategy
+from src.runner import _load_strategy, _load_strategy_pair
+from src.robustness import rolling_robustness, rolling_robustness_pairs
 from src.engine import run_backtest
 from src.data import load_prices
 from src.metrics import buy_and_hold, longest_drawdown_days, annual_returns, dca
@@ -54,6 +55,36 @@ st.session_state.setdefault("history", [])
 st.session_state.setdefault("draft", None)   # pending interpretation awaiting confirm/fix
 
 
+def _robustness_ui(uid, key, compute, has_bh):
+    """Controls + button + results for an out-of-sample robustness run. compute(tw, sp) -> (table, summary)."""
+    with st.expander("📈 out-of-sample robustness — does it generalize across regimes?"):
+        cc = st.columns(2)
+        tw = cc[0].number_input("Test window (months)", 6, 36, 12, key=f"{key}_tw_{uid}")
+        sp = cc[1].number_input("Step (months)", 1, 12, 6, key=f"{key}_sp_{uid}")
+        if st.button("Run robustness", key=f"{key}_btn_{uid}"):
+            with st.spinner("rolling out-of-sample windows…"):
+                tbl, s = compute(int(tw), int(sp))
+            if not s["windows"]:
+                st.warning("Not enough data for that window/step — try a shorter window."); return
+            cols = st.columns(4 if has_bh else 3)
+            i = 0
+            cols[i].metric("Positive windows", f"{s['pct_positive']:.0%}"); i += 1
+            if has_bh:
+                cols[i].metric("Beat buy & hold", f"{s.get('beat_bh', 0)}/{s['windows']}"); i += 1
+            cols[i].metric("Avg window Sharpe", f"{s['avg_sharpe']:.2f}"); i += 1
+            cols[i].metric("Worst window", f"{s['worst_return']:+.1%}")
+            ww = s["worst_window"]
+            st.caption(f"{s['windows']} rolling windows  ·  full-sample Sharpe **{s['full_sharpe']:.2f}**  ·  "
+                       f"worst: {ww[0]} → {ww[1]}")
+            chart_cols = ["sharpe", "bh_sharpe"] if has_bh else ["sharpe"]
+            st.line_chart(tbl.set_index("test_end")[chart_cols].rename(
+                columns={"sharpe": "Strategy", "bh_sharpe": "Buy & Hold"}))
+            fmt = {"total_return": "{:+.1%}", "sharpe": "{:.2f}", "max_drawdown": "{:.1%}"}
+            if has_bh:
+                fmt.update({"bh_return": "{:+.1%}", "bh_sharpe": "{:.2f}"})
+            st.dataframe(tbl.style.format(fmt))
+
+
 def render(b, uid=""):                  # uid keeps widget IDs unique across replayed history turns
     if b.get("scope_error"):              # out of scope (e.g. identical legs / cross-asset) - refuse clearly
         st.warning("⚠️ out of scope — " + b.get("run_result", {}).get("failures",
@@ -86,6 +117,13 @@ def render(b, uid=""):                  # uid keeps widget IDs unique across rep
                 st.download_button("Download full script (.py)", script, key=f"pairs_script_{uid}",
                                    file_name=f"pairs_{pr['ticker_a']}_{pr['ticker_b']}.py",
                                    mime="text/x-python")
+            if pr.get("equity_curve") is not None:
+                _start = pr["equity_curve"].index[0].date()
+                _robustness_ui(uid, "prob",
+                               lambda tw, sp: rolling_robustness_pairs(
+                                   _prices(pr["ticker_a"], "5y", _start), _prices(pr["ticker_b"], "5y", _start),
+                                   _load_strategy_pair(b["strategy_code"]), tw, sp),
+                               has_bh=False)
 
         elif b.get("run_result", {}).get("failures"):
             st.warning(b["run_result"]["failures"])
@@ -187,6 +225,9 @@ def render(b, uid=""):                  # uid keeps widget IDs unique across rep
             st.download_button("Download full script (.py)", script, key=f"p_script_{uid}",
                                file_name=f"backtest_{b.get('ticker', 'SPY')}.py",
                                mime="text/x-python")
+        _robustness_ui(uid, "rob",
+                       lambda tw, sp: rolling_robustness(px, _load_strategy(b["strategy_code"]), tw, sp),
+                       has_bh=True)
 
     st.code(b["strategy_code"], language="python")
     with st.expander("strategy spec"):
