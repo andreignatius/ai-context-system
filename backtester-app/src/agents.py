@@ -24,13 +24,19 @@ def _extract_code(text):
 # ONE PROMPT, ONE JOB: mode classification kept separate from param extraction (combining the two
 # degraded mode accuracy - the critical routing decision). See Lesson 029.
 MODE_PROMPT = (
-    "You route a quant request to the right engine. Decide ONE word:\n"
-    "- position : the user wants a trading STRATEGY's performance (return / Sharpe / drawdown).\n"
-    "- contribution : the user asks about MONEY DEPOSITED over time - dollars, 'how much money', "
-    "putting in $X on a schedule or on a signal, dollar-cost averaging (DCA), 'total value'.\n"
-    "RULE: if the request mentions depositing dollars OR 'how much money', it is CONTRIBUTION "
-    "regardless of the trading signal it describes.\n"
-    "Reply with EXACTLY one word: position OR contribution. Nothing else."
+    "You route a quant request to the right engine. Reply EXACTLY one word: position OR contribution.\n"
+    "- position : the user wants a trading STRATEGY's performance (return / Sharpe / drawdown), EVEN IF they "
+    "mention STARTING CAPITAL in dollars ('start with $10k', 'trade 100% of equity each signal').\n"
+    "- contribution : money DEPOSITED REPEATEDLY over time - DCA, '$X every week/month', 'deposit $X on each "
+    "dip', comparing two DCA schedules, 'how much money would I have'.\n"
+    "KEY TEST: a dollar amount tied to a CADENCE or a repeated event ('$1k monthly', '$250 weekly', '$1k on "
+    "each dip') = CONTRIBUTION. A one-time STARTING CAPITAL ('start with $X', 'trade equity') = POSITION.\n"
+    "Examples:\n"
+    "  'long SPY when RSI<30, start with $10k'              -> position\n"
+    "  '50/200 SMA crossover on SPY'                        -> position\n"
+    "  'DCA $1k monthly into SPY'                           -> contribution\n"
+    "  'compare GOOG monthly vs SPY monthly, $1k each'      -> contribution\n"
+    "  'buy the dip: $1000 on each drawdown vs $1k monthly' -> contribution\n"
 )
 
 PARAMS_PROMPT = (
