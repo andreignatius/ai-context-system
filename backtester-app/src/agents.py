@@ -5,6 +5,10 @@ from langchain_core.messages import SystemMessage, HumanMessage
 from .config import get_llm
 from .state import BuildEvent
 
+_PAIRS_WORDS = ("pairs", "spread", "relative value", "market neutral", "cointegrat", "ratio")
+_NOT_TICKERS = {"RSI","SMA","EMA","MACD","DCA","ETF","USD","AND","THE","SD","ATR","ADX","VWAP","OBV"}
+
+
 llm = get_llm()
 
 def _strip_think(text):
@@ -19,6 +23,17 @@ def _extract_code(text):
             lines = lines[1:]
         return "\n".join(lines).strip()
     return text
+
+def is_multi_asset_position(request: str, mode: str) -> bool:
+    if mode != "position":
+        return False
+    r = request.lower()
+    if any(w in r for w in _PAIRS_WORDS):                       # "pairs", "spread", ...
+        return True
+    if re.search(r"\blong\b.+\bshort\b", r):                    # "long X ... short Y"
+        return True
+    toks = set(re.findall(r"\b[A-Z]{2,5}(?:-USD)?\b", request)) - _NOT_TICKERS
+    return len(toks) >= 2                                       # 2+ distinct tickers named
 
 
 # ONE PROMPT, ONE JOB: mode classification kept separate from param extraction (combining the two

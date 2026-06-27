@@ -23,6 +23,7 @@ from src.data import load_prices
 from src.metrics import buy_and_hold, longest_drawdown_days, annual_returns, dca
 from src.export import full_script, full_contribution_script
 from src.config import get_langfuse_handler
+from .agents import is_multi_asset_position
 
 st.title("📈 Quant Backtester")
 
@@ -176,6 +177,12 @@ for i, turn in enumerate(st.session_state.history):
 
 # --- confirm flow: a pending DRAFT (the interpretation) the user approves or corrects BEFORE running ---
 draft = st.session_state.get("draft")
+if draft.get("scope_error"):
+    st.warning("⚠️ " + draft["scope_msg"])
+    if st.button("OK"):
+        st.session_state.draft = None; st.rerun()
+    st.stop()           # don't render the confirm panel / Run button
+
 if draft:
     ticker = draft.get("ticker") or "SPY"      # prompt-extracted asset (default SPY) - fully prompt-driven now
     period = "5y"                              # default window; an extracted start_date overrides it
@@ -270,7 +277,13 @@ if req := st.chat_input("Describe a strategy, or a money question…"):
     with st.status("Reading your request…", expanded=True) as status:
         s.update(classify(s));   status.write(f"✓ understood — engine: **{s.get('mode')}**")
         s.update(write_spec(s)); status.write("✓ drafted the spec")
-        if s.get("mode") == "contribution":
+
+        if is_multi_asset_position(req, s.get("mode")):
+            s["scope_error"] = True
+            s["scope_msg"] = ("Pairs / multi-asset strategies aren't supported yet — this engine runs a "
+                            "single-asset strategy. Try a single ticker, or a contribution comparison "
+                            "for two assets (e.g. \"GOOG vs SPY monthly\").")
+        elif s.get("mode") == "contribution":
             s.update(extract_legs(s)); status.write("✓ parsed the legs")
         status.update(label="Ready ✓", state="complete")
 
