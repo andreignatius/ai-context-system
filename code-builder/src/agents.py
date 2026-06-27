@@ -38,6 +38,8 @@ ORCHESTRATOR_PROMPT = (
     "b. treat all out-of-range inputs the same way (raise an error)\n"
     "c. do not invent special return values.\n"
     "d. Output ONLY the sections 1-4.\n"
+    "For numerical functions, give example inputs with the PROPERTY the output must satisfy "
+    "(e.g. '> 0', 'put-call parity holds'), not a precise output value you cannot verify."
 )
 
 # CODER_PROMPT = (
@@ -65,7 +67,11 @@ QA_PROMPT = (
     "including `from solution import <function>`. Return the test file as a SINGLE "
     "```python fenced block and nothing else - no notes, no prose."
     "Test only OBSERVABLE BEHAVIOUR (return values, raised exceptions). "
-    "Do NOT test the docstring, __name__, __annotations__, or other implementation details."
+    "Do NOT test the docstring, __name__, __annotations__, or other implementation details. "
+    "For NUMERICAL/math functions where you cannot independently compute the exact answer, "
+    "test PROPERTIES the output must satisfy (sign, monotonicity, known parity/identities, "
+    "limiting cases) rather than asserting precise magic numbers you cannot verify."
+
 )
 
 JUDGE_PROMPT = (
@@ -93,10 +99,20 @@ def _extract_code(text: str) -> str:
         return "\n".join(lines).strip()
     return text
 
+# def _strip_think(text: str) -> str:
+#     # some models (the 32B coder on DeepInfra) emit chain-of-thought in
+#     # <think>...</think> tags; keep only the answer after it
+#     return re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL).strip()
 def _strip_think(text: str) -> str:
-    # some models (the 32B coder on DeepInfra) emit chain-of-thought in
-    # <think>...</think> tags; keep only the answer after it
-    return re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL).strip()
+    """Remove chain-of-thought. Handles a well-formed <think>...</think>, an UNCLOSED <think>
+    (some models reason without closing it), and reasoning that precedes a code fence."""
+    if "</think>" in text:
+        text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL)
+    elif "<think>" in text:
+        i = text.find("```")                       # unclosed: keep from the code fence if there is one,
+        text = text[i:] if i != -1 else re.sub(r"<think>.*$", "", text, flags=re.DOTALL)  # else drop it
+    return text.strip()
+
 
 
 def write_spec(state) -> dict:
@@ -205,7 +221,9 @@ def judge(state) -> dict:
         #         "feedback": f"The test file failed to load:\n{failures}"}
         # a collection error can be the CODE's fault (solution.py won't import) or the TESTS'.
         # trace the origin: an error raised from solution.py is the coder's, not the QA's.
-        culprit = "code" if "solution.py:" in failures else "tests"
+        
+        # culprit = "code" if "solution.py:" in failures else "tests"
+        culprit = "code" if re.search(r"(?<!test_)solution\.py", failures) else "tests"
         print(f"[judge] round {attempts}: build did not LOAD -> {culprit} (mechanical)")
         return {"fix_target": culprit, "attempts": attempts,
                 "feedback": f"The build failed to load:\n{failures}"}
