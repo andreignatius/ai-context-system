@@ -21,7 +21,7 @@ from src.runner import _load_strategy
 from src.engine import run_backtest
 from src.data import load_prices
 from src.metrics import buy_and_hold, longest_drawdown_days, annual_returns, dca
-from src.export import full_script, full_contribution_script
+from src.export import full_script, full_contribution_script, full_pairs_script
 from src.config import get_langfuse_handler
 
 st.title("📈 Quant Backtester")
@@ -79,6 +79,14 @@ def render(b, uid=""):                  # uid keeps widget IDs unique across rep
             st.caption(f"{m['n_trades']} trades")
             if pr.get("equity_curve") is not None:
                 st.line_chart(pr["equity_curve"].rename("spread equity (growth of $1)"))
+            with st.expander("📄 full pairs script (reproducible end-to-end)"):
+                script = full_pairs_script(b["strategy_code"], pr["ticker_a"], pr["ticker_b"],
+                                           pr["equity_curve"].index[0].date())
+                st.code(script, language="python")
+                st.download_button("Download full script (.py)", script, key=f"pairs_script_{uid}",
+                                   file_name=f"pairs_{pr['ticker_a']}_{pr['ticker_b']}.py",
+                                   mime="text/x-python")
+
         elif b.get("run_result", {}).get("failures"):
             st.warning(b["run_result"]["failures"])
         st.code(b["strategy_code"], language="python")
