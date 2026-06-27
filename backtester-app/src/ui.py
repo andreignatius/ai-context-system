@@ -38,6 +38,15 @@ def _handler():                       # Langfuse tracer (no-op if LANGFUSE_* sec
 def _prices(ticker, period, start):
     return load_prices(ticker, period, start)
 
+# friendly labels for live progress - the graph emits one event per node as it finishes
+_STEP = {
+    "write_spec": "📝 interpreting the strategy…",
+    "write_code": "⌨️ writing the strategy code…",
+    "run": "⚙️ running the backtest engine…",
+    "contribution_run": "💵 running the cash-flow engine…",
+    "judge": "🔍 checking soundness (self-healing)…",
+}
+
 st.caption("daily close (auto-adjusted) · yfinance · **prompt-driven** (name the ticker in your request, "
            "e.g. \"backtest IWM…\" or \"GOOG vs SPY\") · equity = growth of $1, fully invested when long")
 
@@ -224,17 +233,27 @@ if draft:
                  "itself. Change a ticker, cadence, or amount to make a real comparison.")
     elif run_clicked:
         prices = _prices(ticker, period, draft.get("start_date") or start)
-        with st.spinner("running… (coder → engine → self-heal)"):
-            state = {**draft, "spec": edited_spec, "prices": prices, "ticker": ticker, "period": period,
-                     "fix_target": "", "feedback": ""}     # the EDITED spec is what the coder builds from
-            if leg_inputs:                                 # user-confirmed legs -> per-leg ticker+cadence+amount
-                state["legs"] = [{"ticker": l["ticker"], "cadence": l["cadence"], "amount": l["amount"],
-                                  "label": _leg_label(l["cadence"], l["amount"], l["ticker"])} for l in leg_inputs]
-            b = _run_graph().invoke(state, config={"callbacks": [_handler()]})
-            b["prices"] = prices
-            b["equity"] = None
-            if b.get("mode") != "contribution" and b["status"] == "ok":
-                b["equity"] = run_backtest(prices, _load_strategy(b["strategy_code"])).equity_curve
+        state = {**draft, "spec": edited_spec, "prices": prices, "ticker": ticker, "period": period,
+                 "fix_target": "", "feedback": ""}         # the EDITED spec is what the coder builds from
+        if leg_inputs:                                     # user-confirmed legs -> per-leg ticker+cadence+amount
+            state["legs"] = [{"ticker": l["ticker"], "cadence": l["cadence"], "amount": l["amount"],
+                              "label": _leg_label(l["cadence"], l["amount"], l["ticker"])} for l in leg_inputs]
+        b = state
+        with st.status("Working…", expanded=True) as status:
+            # stream the graph: 'updates' = WHICH node just finished (live label); 'values' = the accumulated
+            # state, whose LAST value is the final result. Real progress, not a fixed spinner.
+            for smode, chunk in _run_graph().stream(state, stream_mode=["updates", "values"],
+                                                    config={"callbacks": [_handler()]}):
+                if smode == "updates":
+                    status.write(_STEP.get(next(iter(chunk)), next(iter(chunk))))
+                else:
+                    b = chunk
+            status.update(label="Done ✓", state="complete")
+        b["prices"] = prices
+        b["equity"] = None
+        if b.get("mode") != "contribution" and b["status"] == "ok":
+            b["equity"] = run_backtest(prices, _load_strategy(b["strategy_code"])).equity_curve
+
         st.session_state.history += [{"role": "user", "text": draft["request"]},
                                      {"role": "assistant", "build": b}]
         st.session_state.draft = None
@@ -243,10 +262,12 @@ if draft:
 # chat input -> DRAFT (read the request + show the interpretation; wait for confirm)
 if req := st.chat_input("Describe a strategy, or a money question…"):
     s = {"request": req}
-    with st.spinner("reading your request…"):
-        s.update(classify(s))                 # mode, start_date, amount (extracted)
-        s.update(write_spec(s))               # the interpreted spec
-        if s.get("mode") == "contribution":   # prefill the two leg controls (UI-only; eval path untouched)
-            s.update(extract_legs(s))
+    with st.status("Reading your request…", expanded=True) as status:
+        s.update(classify(s));   status.write(f"✓ understood — engine: **{s.get('mode')}**")
+        s.update(write_spec(s)); status.write("✓ drafted the spec")
+        if s.get("mode") == "contribution":
+            s.update(extract_legs(s)); status.write("✓ parsed the legs")
+        status.update(label="Ready ✓", state="complete")
+
     st.session_state.draft = s
     st.rerun()
