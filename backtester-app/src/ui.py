@@ -16,14 +16,13 @@ except Exception:
 
 import pandas as pd
 from src.graph import build_run_graph
-from src.agents import classify, write_spec, extract_legs, _leg_label
+from src.agents import classify, write_spec, extract_legs, _leg_label, is_multi_asset_position
 from src.runner import _load_strategy
 from src.engine import run_backtest
 from src.data import load_prices
 from src.metrics import buy_and_hold, longest_drawdown_days, annual_returns, dca
 from src.export import full_script, full_contribution_script
 from src.config import get_langfuse_handler
-from src.agents import is_multi_asset_position
 
 st.title("📈 Quant Backtester")
 
