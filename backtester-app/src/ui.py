@@ -262,6 +262,11 @@ if draft:
 # chat input -> DRAFT (read the request + show the interpretation; wait for confirm)
 if req := st.chat_input("Describe a strategy, or a money question…"):
     s = {"request": req}
+    # with st.spinner("reading your request…"):
+    #     s.update(classify(s))                 # mode, start_date, amount (extracted)
+    #     s.update(write_spec(s))               # the interpreted spec
+    #     if s.get("mode") == "contribution":   # prefill the two leg controls (UI-only; eval path untouched)
+    #         s.update(extract_legs(s))
     with st.status("Reading your request…", expanded=True) as status:
         s.update(classify(s));   status.write(f"✓ understood — engine: **{s.get('mode')}**")
         s.update(write_spec(s)); status.write("✓ drafted the spec")

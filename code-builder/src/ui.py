@@ -32,6 +32,16 @@ def _get_graph():
 _graph = _get_graph()
 _handler = get_langfuse_handler()
 
+# friendly labels for live progress (parallel graph: spec -> tests+code concurrently -> pytest)
+_STEP = {
+    "write_spec":  "📝 writing the spec…",
+    "write_tests": "🧪 writing the tests…",
+    "write_code":  "⌨️ writing the code…",
+    "run_sandbox": "▶️ running the tests (pytest)…",
+    "judge":       "🔍 judging the failure (self-healing)…",
+}
+
+
 def run_build(payload: dict) -> dict:
     """In-process replacement for POST /build - same input/output shape as api.py."""
     state = {"request": payload["request"], "feedback": payload.get("feedback", ""),
@@ -39,9 +49,22 @@ def run_build(payload: dict) -> dict:
     if state["fix_target"]:         # a human fix -> carry prior artifacts forward (memory)
         state.update({"spec": payload.get("spec", ""), "tests": payload.get("tests", ""),
                       "code": payload.get("code", ""), "test_result": payload.get("test_result", {})})
-    r = _graph.invoke(state, config={"callbacks": [_handler]})
+    # r = _graph.invoke(state, config={"callbacks": [_handler]})
+    # return {"status": r["status"], "spec": r["spec"], "code": r["code"],
+    #         "tests": r["tests"], "test_result": r.get("test_result", {})}
+    r = state
+    with st.status("Working…", expanded=True) as status:
+        # 'updates' = which node just finished (live label); 'values' = accumulated state (last = final).
+        for smode, chunk in _graph.stream(state, stream_mode=["updates", "values"],
+                                          config={"callbacks": [_handler]}):
+            if smode == "updates":
+                status.write(_STEP.get(next(iter(chunk)), next(iter(chunk))))
+            else:
+                r = chunk
+        status.update(label="Done ✓", state="complete")
     return {"status": r["status"], "spec": r["spec"], "code": r["code"],
             "tests": r["tests"], "test_result": r.get("test_result", {})}
+
 
 def render_build(b):
     if b["status"] == "ok":
