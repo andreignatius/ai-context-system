@@ -1,0 +1,54 @@
+"""The strategy runner = the backtester's SANDBOX (the verifier).
+
+Takes LLM-written strategy code (a string defining `strategy(history) -> float`),
+execs it, runs it through the engine, and checks SOUNDNESS: did it run, are
+positions valid, is it deterministic. This is the role pytest played in the
+code-builder - here the engine IS the test.
+"""
+import numpy as np
+import pandas as pd
+import traceback
+from .engine import run_backtest
+
+
+def _load_strategy(code: str):
+    namespace = {"pd": pd, "np": np}
+    exec(code, namespace)
+    if "strategy" not in namespace or not callable(namespace["strategy"]):
+        raise ValueError("code must define a callable `strategy(history)`")
+    return namespace["strategy"]
+
+
+def run_strategy(strategy_code: str, prices) -> dict:
+    # 1. load
+    try:
+        strategy = _load_strategy(strategy_code)
+    except Exception as e:
+        return {"passed": False, "failures": f"load error: {e}", "metrics": {}}
+
+    # 2. run through the engine
+    try:
+        result = run_backtest(prices, strategy)
+    except Exception as e:
+        # return {"passed": False, "failures": f"runtime error: {e}", "metrics": {}}
+        return {"passed": False,
+                "failures": f"runtime error: {type(e).__name__}: {e}\n{traceback.format_exc()}",
+                "metrics": {}}
+    # 3. soundness checks (NOT profitability)
+    failures = []
+    targets = pd.Series([strategy(prices.iloc[: t + 1]) for t in range(len(prices))], dtype=float)
+    if not np.isfinite(targets).all():
+        failures.append("strategy produced non-finite positions")
+    if (targets.abs() > 1.0 + 1e-9).any():
+        failures.append("positions out of range [-1, 1]")
+    result2 = run_backtest(prices, strategy)
+    if not np.array_equal(result.equity_curve.values, result2.equity_curve.values):
+        failures.append("strategy is not deterministic")
+
+    metrics = {"total_return": result.total_return, "ann_return": result.ann_return,
+               "sharpe": result.sharpe, "max_drawdown": result.max_drawdown,
+               "n_trades": result.n_trades}
+    if result.n_trades == 0:
+        failures.append("strategy never takes a position (inert) - warm-up may exceed the data length")
+
+    return {"passed": len(failures) == 0, "failures": "; ".join(failures), "metrics": metrics}
