@@ -8,10 +8,30 @@ code-builder - here the engine IS the test.
 import numpy as np
 import pandas as pd
 import traceback
+import ast
+
 from .engine import run_backtest
 
 
+BANNED_CALLS = {"eval", "exec", "open", "__import__", "compile", "getattr", "globals"}
+ALLOWED_IMPORTS = {"pandas", "numpy", "math"}
+
+
+def _validate(code):
+    tree = ast.parse(code)
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.Import, ast.ImportFrom)):
+            mod = (getattr(node, "module", None) or node.names[0].name).split(".")[0]
+            if mod not in ALLOWED_IMPORTS:
+                raise ValueError(f"import '{mod}' not allowed")
+        if isinstance(node, ast.Call) and getattr(node.func, "id", "") in BANNED_CALLS:
+            raise ValueError(f"call '{node.func.id}' not allowed")
+        if isinstance(node, ast.Attribute) and node.attr.startswith("__"):
+            raise ValueError("dunder access not allowed")   # blocks __globals__, __subclasses__ escapes
+
+
 def _load_strategy(code: str):
+    _validate(code) # SECURITY: reject dangerous code BEFORE exec
     namespace = {"pd": pd, "np": np}
     exec(code, namespace)
     if "strategy" not in namespace or not callable(namespace["strategy"]):
