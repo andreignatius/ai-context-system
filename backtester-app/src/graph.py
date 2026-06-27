@@ -24,49 +24,111 @@ def run_node(state):
             "ledger": [BuildEvent("sandbox", "result",
                                   result["failures"] or str(result["metrics"]))]}
 
+def _scope_fail(msg):                # out-of-scope refusal (terminal; the judge can't fix the REQUEST)
+    return {"status": "failed", "scope_error": True,
+            "run_result": {"passed": False, "metrics": {}, "failures": msg}}
+
+def _fetch_leg_prices(tickers, start):
+    """Fetch each distinct ticker (validate non-empty -> a bad/typo ticker raises). The fetch-time check
+    IS the ticker validation (you can't whitelist arbitrary symbols)."""
+    out = {}
+    for tk in tickers:
+        try:
+            px = load_prices(tk, start=start) if start else load_prices(tk, period="5y")
+        except Exception as e:
+            raise ValueError(f"couldn't fetch data for '{tk}' ({type(e).__name__}) - check the ticker symbol")
+        if px is None or len(px) == 0:
+            raise ValueError(f"couldn't fetch data for '{tk}' - check the ticker symbol")
+        out[tk] = px
+    return out
+
 def contribution_run(state):
     """CONTRIBUTION engine (the cash-flow tool): compare TWO deposit legs in dollars. Each leg has a
-    cadence (signal | weekly | monthly) and its OWN amount, so "weekly $250 vs monthly $1000" works.
-    Legacy default (no legs supplied, e.g. the CLI/eval path): the coder's strategy(history) as the
-    SIGNAL leg vs monthly DCA, both at `amount` - identical to before (keeps the ground-truth eval intact)."""
-    prices = state.get("prices")
-    if prices is None:
-        prices = _prices()
+    cadence (signal | weekly | monthly), its own amount, and its own TICKER - so "GOOG monthly vs SPY
+    monthly" (cross-asset) AND "weekly $250 vs monthly $1000" both work. Legacy default (no legs, e.g. the
+    CLI/eval path): the coder's strategy(history) as the SIGNAL leg vs monthly DCA, both at `amount`, on the
+    passed prices - identical to before (keeps the ground-truth eval intact)."""
     amount = state.get("amount") or 1000.0
+    base_ticker = state.get("ticker") or "SPY"
+    start = state.get("start_date")
     legs = state.get("legs") or [
         {"cadence": "signal", "amount": amount, "label": "Buy-the-signal"},
         {"cadence": "monthly", "amount": amount, "label": "Monthly DCA"},
     ]
-    # degenerate-comparison guard (Lesson 028 - detect-and-refuse, do NOT silently degrade): two IDENTICAL
-    # legs compare an asset to ITSELF. The usual cause is a cross-ASSET request ("GOOG vs SPY") that collapsed
-    # to one ticker - legs vary cadence + amount, NOT the asset (the engine runs ONE ticker per run).
-    if len(legs) >= 2 and all((l["cadence"], l["amount"]) == (legs[0]["cadence"], legs[0]["amount"]) for l in legs):
-        return {"status": "failed", "scope_error": True,
-                "run_result": {"passed": False, "metrics": {},
-                               "failures": "the two legs are IDENTICAL (same cadence + amount) - this compares an "
-                                           "asset to ITSELF. Comparing two different ASSETS (e.g. GOOG vs SPY) is "
-                                           "not supported yet: the backtester runs ONE ticker per run. Vary the "
-                                           "cadence or amount, or run each asset separately."}}
+    leg_tickers = [leg.get("ticker") or base_ticker for leg in legs]
+    cross_asset = len(set(leg_tickers)) > 1
+
+    # degenerate-comparison guard (Lesson 028 - detect-and-refuse): two IDENTICAL legs compare an asset to
+    # ITSELF. Identity now includes the TICKER, so "GOOG monthly $1k vs SPY monthly $1k" is NOT identical.
+    ident = [(leg_tickers[i], legs[i]["cadence"], legs[i]["amount"]) for i in range(len(legs))]
+    if len(legs) >= 2 and all(x == ident[0] for x in ident):
+        return _scope_fail("the two legs are IDENTICAL (same ticker + cadence + amount) - this compares an "
+                           "asset to ITSELF. Vary the ticker, cadence, or amount.")
+    # v1 scope gate: cross-asset supports CALENDAR cadences only (a signal leg needs the coder's single
+    # strategy; "same signal on two assets" is a deliberate v2 increment).
+    if cross_asset and any(leg.get("cadence") == "signal" for leg in legs):
+        return _scope_fail("comparing two different ASSETS with a 'signal' cadence isn't supported yet - "
+                           "use weekly/monthly cadences, or a single asset.")
+
+    # resolve each leg's prices: cross-asset -> fetch per ticker + align to the COMMON window (fairness);
+    # single ticker -> use the UI/eval-supplied prices, the CLI default, or fetch a single non-default ticker.
+    warning = None
+    if cross_asset:
+        try:
+            raw = _fetch_leg_prices(set(leg_tickers), start)
+        except ValueError as e:
+            return _scope_fail(str(e))
+        eff_start = max(raw[t].index[0] for t in raw)        # latest first-date = common overlap window
+        aligned = {t: px[px.index >= eff_start] for t, px in raw.items()}
+        leg_prices = [aligned[t] for t in leg_tickers]
+        earliest = min(raw[t].index[0] for t in raw)
+        end = max(raw[t].index[-1] for t in raw)
+        coverage = (end - eff_start).days / ((end - earliest).days or 1)
+        if coverage < 0.80:                                  # overlap guard: warn (don't refuse) + show window
+            warning = (f"the assets overlap for only {coverage:.0%} of the period - comparing from the common "
+                       f"window starting {eff_start.date()}.")
+    else:
+        single = leg_tickers[0]
+        prices = state.get("prices")
+        if prices is not None and single == base_ticker:
+            pass                                             # UI/eval supplied the right prices
+        elif single == base_ticker:
+            prices = _prices()                               # CLI default (cached)
+        else:
+            try:
+                prices = _fetch_leg_prices({single}, start)[single]   # a single NON-default ticker
+            except ValueError as e:
+                return _scope_fail(str(e))
+        leg_prices = [prices for _ in legs]
+
     needs_signal = any(leg.get("cadence") == "signal" for leg in legs)   # only then must the code be valid
     try:
         strategy = _load_strategy(state["strategy_code"]) if needs_signal else None
         computed = []
-        for leg in legs:
-            dates = schedule_dates(prices, leg["cadence"], strategy)
+        for leg, lp in zip(legs, leg_prices):
+            dates = schedule_dates(lp, leg["cadence"], strategy)
             if len(dates) == 0:          # inert guard (Lesson 025/029): a leg must actually fire
                 return {"status": "failed",
                         "run_result": {"passed": False, "metrics": {},
                                        "failures": f"the '{leg.get('label', leg['cadence'])}' schedule NEVER "
                                                    "fires (0 deposits) - inert; check the signal logic against "
                                                    "the user's definition"}}
-            curve, inv, final = run_contributions(prices, dates, leg["amount"])
+            curve, inv, final = run_contributions(lp, dates, leg["amount"])
             computed.append({**leg, "n": len(dates), "invested": inv, "final": final, "curve": curve})
     except Exception as e:
         print(f"[contribution] error: {e}")
         return {"status": "failed",                                  # "runtime error" -> judge routes to code
                 "run_result": {"passed": False, "failures": f"runtime error (contribution): {e}", "metrics": {}}}
+
+    # chart overlay (cosmetic): reindex both curves onto the UNION of dates + ffill so cross-asset legs with
+    # different calendars (BTC weekends vs equity weekdays) plot as continuous lines, not NaN gaps. The
+    # comparison NUMBERS come from each leg's own calendar above; only the plotted curve is reindexed.
+    union = computed[0]["curve"].index.union(computed[1]["curve"].index)
+    for c in computed:
+        c["curve"] = c["curve"].reindex(union).ffill()
+
     a, b = computed[0], computed[1]
-    result = {"amount": amount, "legs": computed,
+    result = {"amount": amount, "legs": computed, "warning": warning,
               # back-compat keys (the eval + render + export read these): leg A -> "signal", leg B -> "dca"
               "signal": {"n": a["n"], "invested": a["invested"], "final": a["final"]},
               "dca": {"n": b["n"], "invested": b["invested"], "final": b["final"]},
