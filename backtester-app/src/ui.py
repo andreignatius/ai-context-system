@@ -7,8 +7,8 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # bridge Streamlit Cloud secrets -> env BEFORE importing src (config reads LLM_PROVIDER at import)
 try:
-    for _k in ("LLM_PROVIDER", "DEEPINFRA_API_KEY",
-               "LANGFUSE_PUBLIC_KEY", "LANGFUSE_SECRET_KEY", "LANGFUSE_HOST"):
+    for _k in ("LLM_PROVIDER", "DEEPINFRA_API_KEY", "DEEPINFRA_MODEL",
+               "LANGFUSE_PUBLIC_KEY", "LANGFUSE_SECRET_KEY", "LANGFUSE_HOST", "LANGFUSE_BASE_URL"):
         if _k in st.secrets:
             os.environ[_k] = str(st.secrets[_k])
 except Exception:
@@ -22,12 +22,17 @@ from src.engine import run_backtest
 from src.data import load_prices
 from src.metrics import buy_and_hold, longest_drawdown_days, annual_returns, dca
 from src.export import full_script, full_contribution_script
+from src.config import get_langfuse_handler
 
 st.title("📈 Quant Backtester")
 
 @st.cache_resource
 def _run_graph():
     return build_run_graph()
+
+@st.cache_resource
+def _handler():                       # Langfuse tracer (no-op if LANGFUSE_* secrets are unset)
+    return get_langfuse_handler()
 
 @st.cache_data
 def _prices(ticker, period, start):
@@ -170,7 +175,7 @@ if draft:
         with st.spinner("running… (coder → engine → self-heal)"):
             state = {**draft, "spec": edited_spec, "prices": prices, "ticker": ticker, "period": period,
                      "fix_target": "", "feedback": ""}     # the EDITED spec is what the coder builds from
-            b = _run_graph().invoke(state)
+            b = _run_graph().invoke(state, config={"callbacks": [_handler()]})
             b["prices"] = prices
             b["equity"] = None
             if b.get("mode") != "contribution" and b["status"] == "ok":
