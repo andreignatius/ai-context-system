@@ -55,7 +55,7 @@ st.session_state.setdefault("history", [])
 st.session_state.setdefault("draft", None)   # pending interpretation awaiting confirm/fix
 
 
-def render(b):
+def render(b, uid=""):                  # uid keeps widget IDs unique across replayed history turns
     if b.get("scope_error"):              # out of scope (e.g. identical legs / cross-asset) - refuse clearly
         st.warning("⚠️ out of scope — " + b.get("run_result", {}).get("failures",
                                                                        "this request isn't supported yet."))
@@ -103,13 +103,13 @@ def render(b):
             if px is not None:
                 with st.expander("data (preview + download)"):
                     st.dataframe(px.rename("close").to_frame().tail(10))
-                    st.download_button("Download prices (CSV)", px.to_csv(),
+                    st.download_button("Download prices (CSV)", px.to_csv(), key=f"c_prices_{uid}",
                                        file_name=f"{b.get('ticker', 'data')}.csv", mime="text/csv")
                 with st.expander("📄 full contribution script (reproducible end-to-end)"):
                     script = full_contribution_script(b["strategy_code"], b.get("ticker", "SPY"),
                                                       px.index[0].date(), cr.get("legs"))
                     st.code(script, language="python")
-                    st.download_button("Download full script (.py)", script,
+                    st.download_button("Download full script (.py)", script, key=f"c_script_{uid}",
                                        file_name=f"contribution_{b.get('ticker', 'SPY')}.py",
                                        mime="text/x-python")
         elif b.get("run_result", {}).get("failures"):
@@ -147,16 +147,16 @@ def render(b):
             st.dataframe(annual_returns(eq).to_frame("return").style.format("{:+.1%}"))
         with st.expander("data (preview + download)"):
             st.dataframe(px.rename("close").to_frame().tail(10))
-            st.download_button("Download prices (CSV)", px.to_csv(),
+            st.download_button("Download prices (CSV)", px.to_csv(), key=f"p_prices_{uid}",
                                file_name=f"{b.get('ticker', 'data')}_{b.get('period', '')}.csv",
                                mime="text/csv")
-            st.download_button("Download strategy (.py)", b["strategy_code"],
+            st.download_button("Download strategy (.py)", b["strategy_code"], key=f"p_strat_{uid}",
                                file_name="strategy.py", mime="text/x-python")
         with st.expander("📄 full backtest script (reproducible end-to-end)"):
             script = full_script(b["strategy_code"], b.get("ticker", "SPY"), b.get("period", "2y"))
             st.caption("Data load -> signal -> engine -> metrics -> plot, in one standalone file.")
             st.code(script, language="python")
-            st.download_button("Download full script (.py)", script,
+            st.download_button("Download full script (.py)", script, key=f"p_script_{uid}",
                                file_name=f"backtest_{b.get('ticker', 'SPY')}.py",
                                mime="text/x-python")
 
@@ -168,12 +168,12 @@ def render(b):
 
 
 # replay the conversation
-for turn in st.session_state.history:
+for i, turn in enumerate(st.session_state.history):
     with st.chat_message(turn["role"]):
         if turn["role"] == "user":
             st.write(turn["text"])
         else:
-            render(turn["build"])
+            render(turn["build"], uid=str(i))
 
 # --- confirm flow: a pending DRAFT (the interpretation) the user approves or corrects BEFORE running ---
 draft = st.session_state.get("draft")
