@@ -279,7 +279,7 @@ if draft:
             status.update(label="Done ✓", state="complete")
         b["prices"] = prices
         b["equity"] = None
-        if b.get("mode") != "contribution" and b["status"] == "ok":
+        if b.get("mode") == "position" and b["status"] == "ok":
             b["equity"] = run_backtest(prices, _load_strategy(b["strategy_code"])).equity_curve
 
         st.session_state.history += [{"role": "user", "text": draft["request"]},
