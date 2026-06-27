@@ -38,18 +38,8 @@ def _handler():                       # Langfuse tracer (no-op if LANGFUSE_* sec
 def _prices(ticker, period, start):
     return load_prices(ticker, period, start)
 
-# --- sidebar: data config ---
-with st.sidebar:
-    st.header("Data")
-    _t = st.selectbox("Ticker", ["SPY", "QQQ", "AAPL", "MSFT", "NVDA"], index=0)
-    ticker = st.text_input("…or a custom ticker", _t).strip().upper()
-    period = st.selectbox("Period", ["6m", "1y", "2y", "3y", "5y"], index=2)
-    use_start = st.checkbox("Use a start date (overrides period)")
-    start = st.date_input("Start date", value=pd.Timestamp("2021-01-01")) if use_start else None
-
-_range = f"from {start}" if start else period
-st.caption(f"{ticker} · daily close (auto-adjusted) · yfinance · {_range} · "
-           f"equity = growth of $1, fully invested when long")
+st.caption("daily close (auto-adjusted) · yfinance · **prompt-driven** (name the ticker in your request, "
+           "e.g. \"backtest IWM…\" or \"GOOG vs SPY\") · equity = growth of $1, fully invested when long")
 
 st.session_state.setdefault("history", [])
 st.session_state.setdefault("draft", None)   # pending interpretation awaiting confirm/fix
@@ -178,12 +168,16 @@ for i, turn in enumerate(st.session_state.history):
 # --- confirm flow: a pending DRAFT (the interpretation) the user approves or corrects BEFORE running ---
 draft = st.session_state.get("draft")
 if draft:
+    ticker = draft.get("ticker") or "SPY"      # prompt-extracted asset (default SPY) - fully prompt-driven now
+    period = "5y"                              # default window; an extracted start_date overrides it
+    start = None
     with st.chat_message("user"):
         st.write(draft["request"])
     with st.chat_message("assistant"):
         st.info("Here's how I read your request — **edit the spec if needed, then run.** "
                 "Your words go straight to the coder (no LLM re-interpretation):")
-        st.caption(f"engine: **{draft['mode']}**  ·  start: **{draft.get('start_date') or '(sidebar period)'}**")
+        st.caption(f"engine: **{draft['mode']}**  ·  ticker: **{draft.get('ticker') or 'SPY'}**  ·  "
+                   f"start: **{draft.get('start_date') or '(default 5y)'}**")
 
         # CONTRIBUTION: two editable legs (cadence + own amount) -> "weekly $250 vs monthly $1000".
         # Direct user control (c2 philosophy); prefilled by extract_legs, but the user has final say.

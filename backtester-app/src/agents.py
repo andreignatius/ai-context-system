@@ -40,7 +40,9 @@ MODE_PROMPT = (
 )
 
 PARAMS_PROMPT = (
-    "Extract two fields from a quant request. Reply EXACTLY two lines and nothing else:\n"
+    "Extract three fields from a quant request. Reply EXACTLY three lines and nothing else:\n"
+    "TICKER: the stock/ETF/crypto symbol in UPPERCASE if the user names ONE asset (e.g. IWM, QQQ, BTC-USD), "
+    "else none\n"
     "START: the start date as YYYY-MM-DD if the user gives one ('since 2021' -> 2021-01-01), else none\n"
     "AMOUNT: the dollars-per-deposit as a plain number if given ('$1k' -> 1000), else none\n"
 )
@@ -55,10 +57,13 @@ def classify(state):
 
     params_reply = _strip_think(llm.invoke([SystemMessage(content=PARAMS_PROMPT),
                                             HumanMessage(content=req)]).content)
-    start, amount = None, None
+    start, amount, ticker = None, None, None
     for line in params_reply.splitlines():
         low = line.strip().lower()
-        if low.startswith("start:"):
+        if low.startswith("ticker:"):
+            val = line.split(":", 1)[1].strip().upper().strip(".,")
+            ticker = val if val and val.lower() != "none" else None
+        elif low.startswith("start:"):
             val = line.split(":", 1)[1].strip()
             start = val if ("-" in val and val.lower() != "none") else None   # a YYYY-MM-DD date
         elif low.startswith("amount:"):
@@ -67,8 +72,10 @@ def classify(state):
                 amount = float(val)
             except ValueError:
                 amount = None
-    print(f"[classify] mode={mode} start={start} amount={amount}")
+    print(f"[classify] mode={mode} ticker={ticker} start={start} amount={amount}")
     out = {"mode": mode}
+    if ticker:
+        out["ticker"] = ticker
     if start:
         out["start_date"] = start
     if amount:
