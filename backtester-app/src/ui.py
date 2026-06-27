@@ -15,7 +15,8 @@ except Exception:
     pass                       # no secrets.toml locally -> fall back to .env / shell env
 
 import pandas as pd
-from src.graph import build_graph
+from src.graph import build_run_graph
+from src.agents import classify, write_spec
 from src.runner import _load_strategy
 from src.engine import run_backtest
 from src.data import load_prices
@@ -25,8 +26,8 @@ from src.export import full_script, full_contribution_script
 st.title("📈 Quant Backtester")
 
 @st.cache_resource
-def _graph():
-    return build_graph()
+def _run_graph():
+    return build_run_graph()
 
 @st.cache_data
 def _prices(ticker, period, start):
@@ -46,6 +47,7 @@ st.caption(f"{ticker} · daily close (auto-adjusted) · yfinance · {_range} · 
            f"equity = growth of $1, fully invested when long")
 
 st.session_state.setdefault("history", [])
+st.session_state.setdefault("draft", None)   # pending interpretation awaiting confirm/fix
 
 
 def render(b):
@@ -150,15 +152,39 @@ for turn in st.session_state.history:
         else:
             render(turn["build"])
 
-# chat input -> build
-if req := st.chat_input("e.g. 'go long when the 20-day return is positive, else flat'"):
-    prices = _prices(ticker, period, start)
-    with st.spinner("building… (classify → orchestrator → coder → run)"):
-        b = _graph().invoke({"request": req, "prices": prices, "ticker": ticker, "period": period})
-        b["prices"] = prices
-        b["equity"] = None
-        if b.get("mode") != "contribution" and b["status"] == "ok":
-            b["equity"] = run_backtest(prices, _load_strategy(b["strategy_code"])).equity_curve
-    st.session_state.history += [{"role": "user", "text": req},
-                                 {"role": "assistant", "build": b}]
+# --- confirm flow: a pending DRAFT (the interpretation) the user approves or corrects BEFORE running ---
+draft = st.session_state.get("draft")
+if draft:
+    with st.chat_message("user"):
+        st.write(draft["request"])
+    with st.chat_message("assistant"):
+        st.info("Here's how I read your request — **edit the spec if needed, then run.** "
+                "Your words go straight to the coder (no LLM re-interpretation):")
+        st.caption(f"engine: **{draft['mode']}**  ·  start: **{draft.get('start_date') or '(sidebar period)'}**"
+                   f"  ·  ${draft.get('amount', 1000):,.0f} per deposit")
+        edited_spec = st.text_area("interpreted spec (editable)", value=draft["spec"], height=320, key="spec_edit")
+        run_clicked = st.button("✅ Run it", type="primary")
+
+    if run_clicked:
+        prices = _prices(ticker, period, draft.get("start_date") or start)
+        with st.spinner("running… (coder → engine → self-heal)"):
+            state = {**draft, "spec": edited_spec, "prices": prices, "ticker": ticker, "period": period,
+                     "fix_target": "", "feedback": ""}     # the EDITED spec is what the coder builds from
+            b = _run_graph().invoke(state)
+            b["prices"] = prices
+            b["equity"] = None
+            if b.get("mode") != "contribution" and b["status"] == "ok":
+                b["equity"] = run_backtest(prices, _load_strategy(b["strategy_code"])).equity_curve
+        st.session_state.history += [{"role": "user", "text": draft["request"]},
+                                     {"role": "assistant", "build": b}]
+        st.session_state.draft = None
+        st.rerun()
+
+# chat input -> DRAFT (read the request + show the interpretation; wait for confirm)
+if req := st.chat_input("Describe a strategy, or a money question…"):
+    s = {"request": req}
+    with st.spinner("reading your request…"):
+        s.update(classify(s))                 # mode, start_date, amount (extracted)
+        s.update(write_spec(s))               # the interpreted spec
+    st.session_state.draft = s
     st.rerun()

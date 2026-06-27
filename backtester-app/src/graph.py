@@ -93,3 +93,24 @@ def build_graph():
     # contribution lane now self-heals too: failure -> judge -> write_code -> (route) -> contribution_run
     g.add_conditional_edges("contribution_run", route_after_contribution, {"done": END, "judge": "judge"})
     return g.compile()
+
+
+def build_run_graph():
+    """The RUN half for the UI's confirm flow: starts from an ALREADY-CONFIRMED spec (skips classify +
+    write_spec; the UI does those as the 'draft'). write_spec is kept only so the judge's 'spec' verdict
+    during self-heal still has somewhere to go."""
+    g = StateGraph(BacktestState)
+    g.add_node("write_spec", write_spec)
+    g.add_node("write_code", write_code)
+    g.add_node("run", run_node)
+    g.add_node("judge", judge)
+    g.add_node("contribution_run", contribution_run)
+
+    g.add_edge(START, "write_code")          # the spec is already in state (confirmed by the user)
+    g.add_edge("write_spec", "write_code")
+    g.add_conditional_edges("write_code", route_after_code,
+                            {"position": "run", "contribution": "contribution_run"})
+    g.add_conditional_edges("run", route_after_run, {"done": END, "judge": "judge"})
+    g.add_conditional_edges("judge", dispatch, {"code": "write_code", "spec": "write_spec"})
+    g.add_conditional_edges("contribution_run", route_after_contribution, {"done": END, "judge": "judge"})
+    return g.compile()
