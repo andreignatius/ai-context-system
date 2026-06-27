@@ -87,18 +87,21 @@ def full_script(strategy_code, ticker="SPY", period="2y") -> str:
             .replace("__STRATEGY_CODE__", strategy_code.strip()))
 
 
-_CONTRIB_TEMPLATE = '''"""Self-contained CONTRIBUTION backtest: __TICKER__ since __START__.
-Compares __LEG_A_LABEL__ vs __LEG_B_LABEL__ in DOLLARS.  Run:  python this_file.py"""
+_CONTRIB_TEMPLATE = '''"""Self-contained CONTRIBUTION backtest since __START__.
+Compares __LEG_A_LABEL__ vs __LEG_B_LABEL__ in DOLLARS (each leg its OWN ticker + cadence + amount).
+Run:  python this_file.py"""
 import yfinance as yf
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 
-# === 1. DATA ===
-prices = yf.download("__TICKER__", start="__START__", auto_adjust=True, progress=False)["Close"]
-if isinstance(prices, pd.DataFrame):
-    prices = prices.iloc[:, 0]
-prices = prices.dropna()
+
+# === 1. DATA: fetch each leg's ticker ===
+def fetch(ticker, start):
+    df = yf.download(ticker, start=start, auto_adjust=True, progress=False)["Close"]
+    if isinstance(df, pd.DataFrame):
+        df = df.iloc[:, 0]
+    return df.dropna()
 
 
 # === 2. SIGNAL: the deposit signal (history -> 1.0 = deposit on this bar). Used only by a 'signal' leg. ===
@@ -130,20 +133,26 @@ def schedule_dates(prices, cadence):
     return {"signal": signal_dates, "weekly": weekly_dates, "monthly": monthly_dates}[cadence](prices)
 
 
-# === 4. RUN + COMPARE (in dollars) - each leg has its OWN cadence and amount ===
-A_LABEL, A_CADENCE, A_AMOUNT = "__LEG_A_LABEL__", "__LEG_A_CADENCE__", __LEG_A_AMOUNT__
-B_LABEL, B_CADENCE, B_AMOUNT = "__LEG_B_LABEL__", "__LEG_B_CADENCE__", __LEG_B_AMOUNT__
-a_curve, a_inv, a_final = run_contributions(prices, schedule_dates(prices, A_CADENCE), A_AMOUNT)
-b_curve, b_inv, b_final = run_contributions(prices, schedule_dates(prices, B_CADENCE), B_AMOUNT)
-print(f"{A_LABEL:18}: invested ${a_inv:>10,.0f} -> ${a_final:>11,.0f}  ({a_final / a_inv:.2f}x)")
-print(f"{B_LABEL:18}: invested ${b_inv:>10,.0f} -> ${b_final:>11,.0f}  ({b_final / b_inv:.2f}x)")
+# === 4. RUN + COMPARE (in dollars) - each leg its OWN ticker + cadence + amount ===
+A_TICKER, A_CADENCE, A_AMOUNT, A_LABEL = "__A_TICKER__", "__LEG_A_CADENCE__", __LEG_A_AMOUNT__, "__LEG_A_LABEL__"
+B_TICKER, B_CADENCE, B_AMOUNT, B_LABEL = "__B_TICKER__", "__LEG_B_CADENCE__", __LEG_B_AMOUNT__, "__LEG_B_LABEL__"
+START = "__START__"
+
+pa, pb = fetch(A_TICKER, START), fetch(B_TICKER, START)
+eff_start = max(pa.index[0], pb.index[0])           # common overlap window (fairness: same period for both)
+pa, pb = pa[pa.index >= eff_start], pb[pb.index >= eff_start]
+a_curve, a_inv, a_final = run_contributions(pa, schedule_dates(pa, A_CADENCE), A_AMOUNT)
+b_curve, b_inv, b_final = run_contributions(pb, schedule_dates(pb, B_CADENCE), B_AMOUNT)
+print(f"{A_LABEL:22}: invested ${a_inv:>10,.0f} -> ${a_final:>11,.0f}  ({a_final / a_inv:.3f}x)")
+print(f"{B_LABEL:22}: invested ${b_inv:>10,.0f} -> ${b_final:>11,.0f}  ({b_final / b_inv:.3f}x)")
 print("Compare the MULTIPLE, not the absolute final (deposit totals differ).")
 
-# === 5. PLOT: portfolio value over time ===
+# === 5. PLOT: portfolio value over time (union index + ffill -> different calendars plot continuously) ===
+union = a_curve.index.union(b_curve.index)
 plt.figure(figsize=(14, 7))
-plt.plot(a_curve.index, a_curve, label=A_LABEL)
-plt.plot(b_curve.index, b_curve, label=B_LABEL)
-plt.title("__TICKER__  -  portfolio value over time")
+plt.plot(union, a_curve.reindex(union).ffill(), label=A_LABEL)
+plt.plot(union, b_curve.reindex(union).ffill(), label=B_LABEL)
+plt.title("portfolio value over time")
 plt.ylabel("Portfolio value ($)")
 plt.legend(); plt.grid(True, alpha=0.3); plt.tight_layout()
 plt.show()
@@ -151,14 +160,16 @@ plt.show()
 
 
 def full_contribution_script(strategy_code, ticker="SPY", start="2021-01-01", legs=None) -> str:
-    """Assemble a standalone contribution backtest comparing two deposit legs (each its own cadence + amount)."""
+    """Assemble a standalone contribution backtest comparing two deposit legs (each its own ticker, cadence,
+    amount), aligned to the common window. A leg without a ticker defaults to `ticker`."""
     if not legs:                                    # legacy default: signal-deposits vs monthly DCA @ $1000
         legs = [{"cadence": "signal", "amount": 1000.0, "label": "Buy-the-signal"},
                 {"cadence": "monthly", "amount": 1000.0, "label": "Monthly DCA"}]
     legs = (list(legs) + list(legs))[:2]            # ensure exactly two legs
     a, b = legs[0], legs[1]
     return (_CONTRIB_TEMPLATE
-            .replace("__TICKER__", ticker)
+            .replace("__A_TICKER__", a.get("ticker") or ticker)
+            .replace("__B_TICKER__", b.get("ticker") or ticker)
             .replace("__START__", str(start))
             .replace("__LEG_A_LABEL__", a["label"]).replace("__LEG_A_CADENCE__", a["cadence"])
             .replace("__LEG_A_AMOUNT__", f"{a['amount']:.0f}")

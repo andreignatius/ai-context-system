@@ -74,41 +74,60 @@ _CADENCES = ("signal", "weekly", "monthly")
 
 LEGS_PROMPT = (
     "A user is comparing TWO money-deposit schedules. Extract both. Reply EXACTLY two lines, nothing else:\n"
-    "LEG1: <cadence> <amount>\n"
-    "LEG2: <cadence> <amount>\n"
+    "LEG1: <ticker> <cadence> <amount>\n"
+    "LEG2: <ticker> <cadence> <amount>\n"
+    "ticker is the stock/ETF/crypto symbol in UPPERCASE (GOOG, SPY, AAPL, BTC-USD). If the user names only "
+    "ONE asset, use it for BOTH legs; if NONE is named, write SPY.\n"
     "cadence is ONE of: signal (deposit on a trading signal, e.g. 'buy the dip'), weekly, monthly.\n"
     "amount is the dollars per deposit, a plain number.\n"
     "Examples:\n"
-    "  'weekly $250 vs monthly $1000'            -> LEG1: weekly 250 / LEG2: monthly 1000\n"
-    "  'buy the dip $1000 vs DCA $1000 monthly'  -> LEG1: signal 1000 / LEG2: monthly 1000\n"
+    "  'GOOG monthly vs SPY monthly, $1k each'   -> LEG1: GOOG monthly 1000 / LEG2: SPY monthly 1000\n"
+    "  'weekly $250 vs monthly $1000 into QQQ'   -> LEG1: QQQ weekly 250 / LEG2: QQQ monthly 1000\n"
+    "  'buy the dip $1000 vs DCA $1000 monthly'  -> LEG1: SPY signal 1000 / LEG2: SPY monthly 1000\n"
 )
 
 
-def _leg_label(cadence, amount):
-    nice = {"signal": "Signal", "weekly": "Weekly", "monthly": "Monthly"}.get(cadence, cadence.title())
-    return f"{nice} ${amount:,.0f}"
+def _leg_label(cadence, amount, ticker=None):
+    nice = {"signal": "Signal", "weekly": "Weekly", "monthly": "Monthly"}.get(cadence, str(cadence).title())
+    pre = f"{ticker} " if ticker else ""
+    return f"{pre}{nice} ${amount:,.0f}"
+
+
+def _parse_leg(text):
+    """Pull (ticker, cadence, amount) from a LEG line, order-independent: a cadence is a known word, a number
+    is the amount, the leftover alpha token is the ticker (may be absent -> None, the UI fills the default)."""
+    ticker, cadence, amount = None, None, None
+    for p in text.strip().split():
+        low = p.lower()
+        if low in _CADENCES and cadence is None:
+            cadence = low
+            continue
+        try:
+            amount = float(p.replace("$", "").replace(",", ""))
+            continue
+        except ValueError:
+            pass
+        if ticker is None and any(c.isalpha() for c in p):
+            ticker = p.upper().strip(".,")
+    return ticker, cadence, amount
 
 
 def extract_legs(state):
-    """UI-ONLY helper (NOT a graph node): best-effort parse of the TWO schedules being compared, to
-    PREFILL the editable leg controls in the confirm panel. The user confirms/edits before running, so a
-    mis-parse is harmless. The CLI/eval path never calls this -> legacy signal-vs-monthly stays intact."""
+    """UI-ONLY helper (NOT a graph node): best-effort parse of the TWO schedules being compared (ticker +
+    cadence + amount), to PREFILL the editable leg controls in the confirm panel. The user confirms/edits
+    before running, so a mis-parse is harmless. The CLI/eval path never calls this -> legacy stays intact."""
     reply = _strip_think(llm.invoke([SystemMessage(content=LEGS_PROMPT),
                                      HumanMessage(content=state["request"])]).content)
     legs = []
     for line in reply.splitlines():
         if line.strip().lower()[:4] in ("leg1", "leg2"):
-            parts = line.split(":", 1)[1].strip().split()
-            cadence = next((p.lower() for p in parts if p.lower() in _CADENCES), None)
-            amount = None
-            for p in parts:
-                try:
-                    amount = float(p.replace("$", "").replace(",", "")); break
-                except ValueError:
-                    continue
+            ticker, cadence, amount = _parse_leg(line.split(":", 1)[1])
             if cadence:
                 amt = amount or 1000.0
-                legs.append({"cadence": cadence, "amount": amt, "label": _leg_label(cadence, amt)})
+                leg = {"cadence": cadence, "amount": amt, "label": _leg_label(cadence, amt, ticker)}
+                if ticker:
+                    leg["ticker"] = ticker
+                legs.append(leg)
     print(f"[extract_legs] {legs}")
     return {"legs": legs}
 

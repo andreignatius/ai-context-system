@@ -81,8 +81,13 @@ def render(b):
                 rows = [cr["signal"], cr["dca"]]
                 idx = ["Buy-the-signal", "Monthly DCA"]
                 per_dep = [cr.get("amount", 1000.0)] * 2
-            if px is not None:
+            curve = cr.get("signal_curve")               # the actual run window (cross-asset = common window)
+            if curve is not None and len(curve):
+                st.caption(f"{curve.index[0].date()} -> {curve.index[-1].date()}")
+            elif px is not None:
                 st.caption(f"{px.index[0].date()} -> {px.index[-1].date()}")
+            if cr.get("warning"):                        # overlap-coverage notice (cross-asset)
+                st.warning("⚠️ " + cr["warning"])
             comp = pd.DataFrame(
                 {"per deposit": per_dep,
                  "deposits": [r["n"] for r in rows],
@@ -184,22 +189,26 @@ if draft:
         # Direct user control (c2 philosophy); prefilled by extract_legs, but the user has final say.
         leg_inputs = None
         if draft.get("mode") == "contribution":
-            st.markdown("**Compare two deposit schedules** — set each leg's cadence + dollar amount:")
+            st.markdown("**Compare two deposit schedules** — set each leg's ticker, cadence, and amount "
+                        "(different tickers = a cross-asset comparison, e.g. GOOG vs SPY):")
             hint = list(draft.get("legs") or [])
             while len(hint) < 2:                       # default the second leg to monthly DCA
                 hint.append({"cadence": "monthly", "amount": draft.get("amount", 1000.0)})
             cad_opts = ["signal", "weekly", "monthly"]
             leg_inputs = []
             for i in range(2):
-                c1, c2 = st.columns(2)
+                c1, c2, c3 = st.columns([1, 1, 1])
+                tkr = c1.text_input(f"Leg {chr(65 + i)} ticker", value=(hint[i].get("ticker") or ticker),
+                                    key=f"leg{i}_tkr").strip().upper()
                 hc = hint[i].get("cadence") if hint[i].get("cadence") in cad_opts else "monthly"
-                cad = c1.selectbox(f"Leg {chr(65 + i)} cadence", cad_opts,
+                cad = c2.selectbox(f"Leg {chr(65 + i)} cadence", cad_opts,
                                    index=cad_opts.index(hc), key=f"leg{i}_cad")
-                amt = c2.number_input(f"Leg {chr(65 + i)} $ / deposit", min_value=1.0,
+                amt = c3.number_input(f"Leg {chr(65 + i)} $ / dep", min_value=1.0,
                                       value=float(hint[i].get("amount") or 1000.0), step=50.0, key=f"leg{i}_amt")
-                leg_inputs.append({"cadence": cad, "amount": amt})
+                leg_inputs.append({"ticker": tkr, "cadence": cad, "amount": amt})
             if any(l["cadence"] == "signal" for l in leg_inputs):
-                st.caption("A **signal** leg deposits when the strategy fires — edit the spec below to define it.")
+                st.caption("A **signal** leg deposits when the strategy fires — edit the spec below. "
+                           "(Signal cadence runs on a single asset; cross-asset uses weekly/monthly.)")
         else:
             st.caption(f"${draft.get('amount', 1000):,.0f} per deposit")
 
@@ -207,20 +216,19 @@ if draft:
         run_clicked = st.button("✅ Run it", type="primary")
 
     # pre-check: identical legs = an asset-vs-itself comparison -> refuse instantly (no wasted coder call).
-    # keeps the draft so the user can adjust a cadence/amount and re-run.
-    identical_legs = bool(leg_inputs) and len({(l["cadence"], l["amount"]) for l in leg_inputs}) == 1
+    # identity includes the TICKER, so GOOG-vs-SPY is NOT identical. keeps the draft so the user can adjust.
+    identical_legs = bool(leg_inputs) and len({(l["ticker"], l["cadence"], l["amount"]) for l in leg_inputs}) == 1
     if run_clicked and identical_legs:
-        st.error("⚠️ Both legs are identical (same cadence + amount) — that compares the asset to itself. "
-                 "If you meant two different assets (e.g. GOOG vs SPY), that isn't supported yet "
-                 "(one ticker per run). Change a cadence/amount, or pick a single asset.")
+        st.error("⚠️ Both legs are identical (same ticker + cadence + amount) — that compares the asset to "
+                 "itself. Change a ticker, cadence, or amount to make a real comparison.")
     elif run_clicked:
         prices = _prices(ticker, period, draft.get("start_date") or start)
         with st.spinner("running… (coder → engine → self-heal)"):
             state = {**draft, "spec": edited_spec, "prices": prices, "ticker": ticker, "period": period,
                      "fix_target": "", "feedback": ""}     # the EDITED spec is what the coder builds from
-            if leg_inputs:                                 # user-confirmed legs -> per-leg cadence + amount
-                state["legs"] = [{"cadence": l["cadence"], "amount": l["amount"],
-                                  "label": _leg_label(l["cadence"], l["amount"])} for l in leg_inputs]
+            if leg_inputs:                                 # user-confirmed legs -> per-leg ticker+cadence+amount
+                state["legs"] = [{"ticker": l["ticker"], "cadence": l["cadence"], "amount": l["amount"],
+                                  "label": _leg_label(l["cadence"], l["amount"], l["ticker"])} for l in leg_inputs]
             b = _run_graph().invoke(state, config={"callbacks": [_handler()]})
             b["prices"] = prices
             b["equity"] = None
