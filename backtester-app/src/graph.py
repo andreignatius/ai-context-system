@@ -2,7 +2,7 @@ from langgraph.graph import StateGraph, START, END
 from .state import BacktestState, BuildEvent
 from .agents import write_spec, write_code, judge, classify
 from .runner import run_strategy, _load_strategy
-from .contributions import run_contributions, monthly_dates, signal_dates
+from .contributions import run_contributions, schedule_dates
 from .data import load_prices
 from .config import MAX_ATTEMPTS
 
@@ -25,32 +25,44 @@ def run_node(state):
                                   result["failures"] or str(result["metrics"]))]}
 
 def contribution_run(state):
-    """CONTRIBUTION engine (the cash-flow tool): the coder's strategy(history) is the deposit SIGNAL.
-    Deposit $amount on each signal bar, and on the first of each month (DCA), and compare in dollars."""
+    """CONTRIBUTION engine (the cash-flow tool): compare TWO deposit legs in dollars. Each leg has a
+    cadence (signal | weekly | monthly) and its OWN amount, so "weekly $250 vs monthly $1000" works.
+    Legacy default (no legs supplied, e.g. the CLI/eval path): the coder's strategy(history) as the
+    SIGNAL leg vs monthly DCA, both at `amount` - identical to before (keeps the ground-truth eval intact)."""
     prices = state.get("prices")
     if prices is None:
         prices = _prices()
     amount = state.get("amount") or 1000.0
+    legs = state.get("legs") or [
+        {"cadence": "signal", "amount": amount, "label": "Buy-the-signal"},
+        {"cadence": "monthly", "amount": amount, "label": "Monthly DCA"},
+    ]
+    needs_signal = any(leg.get("cadence") == "signal" for leg in legs)   # only then must the code be valid
     try:
-        strategy = _load_strategy(state["strategy_code"])
-        sig_dates = signal_dates(prices, strategy)
-        if len(sig_dates) == 0:          # inert guard (Lesson 025/029): the signal must actually fire
-            return {"status": "failed",
-                    "run_result": {"passed": False, "metrics": {},
-                                   "failures": "the deposit signal NEVER fires (0 deposits) - inert "
-                                               "strategy; check the signal logic against the user's definition"}}
-        mon_dates = monthly_dates(prices)
-        sig_curve, sig_inv, sig_final = run_contributions(prices, sig_dates, amount)
-        dca_curve, dca_inv, dca_final = run_contributions(prices, mon_dates, amount)
+        strategy = _load_strategy(state["strategy_code"]) if needs_signal else None
+        computed = []
+        for leg in legs:
+            dates = schedule_dates(prices, leg["cadence"], strategy)
+            if len(dates) == 0:          # inert guard (Lesson 025/029): a leg must actually fire
+                return {"status": "failed",
+                        "run_result": {"passed": False, "metrics": {},
+                                       "failures": f"the '{leg.get('label', leg['cadence'])}' schedule NEVER "
+                                                   "fires (0 deposits) - inert; check the signal logic against "
+                                                   "the user's definition"}}
+            curve, inv, final = run_contributions(prices, dates, leg["amount"])
+            computed.append({**leg, "n": len(dates), "invested": inv, "final": final, "curve": curve})
     except Exception as e:
         print(f"[contribution] error: {e}")
         return {"status": "failed",                                  # "runtime error" -> judge routes to code
                 "run_result": {"passed": False, "failures": f"runtime error (contribution): {e}", "metrics": {}}}
-    result = {"amount": amount,
-              "signal": {"n": len(sig_dates), "invested": sig_inv, "final": sig_final},
-              "dca": {"n": len(mon_dates), "invested": dca_inv, "final": dca_final},
-              "signal_curve": sig_curve, "dca_curve": dca_curve}   # for the value-over-time chart
-    print(f"[contribution] signal ${sig_final:,.0f}/${sig_inv:,.0f}  vs  DCA ${dca_final:,.0f}/${dca_inv:,.0f}")
+    a, b = computed[0], computed[1]
+    result = {"amount": amount, "legs": computed,
+              # back-compat keys (the eval + render + export read these): leg A -> "signal", leg B -> "dca"
+              "signal": {"n": a["n"], "invested": a["invested"], "final": a["final"]},
+              "dca": {"n": b["n"], "invested": b["invested"], "final": b["final"]},
+              "signal_curve": a["curve"], "dca_curve": b["curve"]}   # for the value-over-time chart
+    print(f"[contribution] {a['label']} ${a['final']:,.0f}/${a['invested']:,.0f}  vs  "
+          f"{b['label']} ${b['final']:,.0f}/${b['invested']:,.0f}")
     return {"status": "ok", "contribution_result": result}
 
 def route_after_code(state):

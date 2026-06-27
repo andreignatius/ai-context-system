@@ -87,8 +87,8 @@ def full_script(strategy_code, ticker="SPY", period="2y") -> str:
             .replace("__STRATEGY_CODE__", strategy_code.strip()))
 
 
-_CONTRIB_TEMPLATE = '''"""Self-contained CONTRIBUTION backtest: __TICKER__ since __START__, $__AMOUNT__ per deposit.
-Compares buy-the-signal vs monthly DCA in DOLLARS. Run:  python this_file.py"""
+_CONTRIB_TEMPLATE = '''"""Self-contained CONTRIBUTION backtest: __TICKER__ since __START__.
+Compares __LEG_A_LABEL__ vs __LEG_B_LABEL__ in DOLLARS.  Run:  python this_file.py"""
 import yfinance as yf
 import numpy as np
 import pandas as pd
@@ -101,11 +101,11 @@ if isinstance(prices, pd.DataFrame):
 prices = prices.dropna()
 
 
-# === 2. SIGNAL: the deposit signal (history -> 1.0 = deposit on this bar) ===
+# === 2. SIGNAL: the deposit signal (history -> 1.0 = deposit on this bar). Used only by a 'signal' leg. ===
 __STRATEGY_CODE__
 
 
-# === 3. CONTRIBUTION ENGINE: deposit $amount on each date, track units -> dollar value ===
+# === 3. CONTRIBUTION ENGINE + deposit schedules (signal | weekly | monthly) ===
 def run_contributions(prices, deposit_dates, amount):
     deposit_set = set(pd.DatetimeIndex(deposit_dates))
     units, values, n = 0.0, [], 0
@@ -116,37 +116,52 @@ def run_contributions(prices, deposit_dates, amount):
         values.append(units * px)
     return pd.Series(values, index=prices.index), amount * n, float(values[-1])
 
-def signal_dates(prices, strategy):
+def signal_dates(prices):
     fires = np.array([strategy(prices.iloc[: t + 1]) > 0 for t in range(len(prices))])
     return prices.index[fires]
+
+def weekly_dates(prices):
+    return prices.index[~prices.index.to_period("W").duplicated()]
 
 def monthly_dates(prices):
     return prices.index[~prices.index.to_period("M").duplicated()]
 
+def schedule_dates(prices, cadence):
+    return {"signal": signal_dates, "weekly": weekly_dates, "monthly": monthly_dates}[cadence](prices)
 
-# === 4. RUN + COMPARE (in dollars) ===
-AMOUNT = __AMOUNT__
-sig_curve, sig_inv, sig_final = run_contributions(prices, signal_dates(prices, strategy), AMOUNT)
-dca_curve, dca_inv, dca_final = run_contributions(prices, monthly_dates(prices), AMOUNT)
-print(f"Buy-the-signal: invested ${sig_inv:>10,.0f} -> ${sig_final:>11,.0f}  ({sig_final/sig_inv:.2f}x)")
-print(f"Monthly DCA   : invested ${dca_inv:>10,.0f} -> ${dca_final:>11,.0f}  ({dca_final/dca_inv:.2f}x)")
+
+# === 4. RUN + COMPARE (in dollars) - each leg has its OWN cadence and amount ===
+A_LABEL, A_CADENCE, A_AMOUNT = "__LEG_A_LABEL__", "__LEG_A_CADENCE__", __LEG_A_AMOUNT__
+B_LABEL, B_CADENCE, B_AMOUNT = "__LEG_B_LABEL__", "__LEG_B_CADENCE__", __LEG_B_AMOUNT__
+a_curve, a_inv, a_final = run_contributions(prices, schedule_dates(prices, A_CADENCE), A_AMOUNT)
+b_curve, b_inv, b_final = run_contributions(prices, schedule_dates(prices, B_CADENCE), B_AMOUNT)
+print(f"{A_LABEL:18}: invested ${a_inv:>10,.0f} -> ${a_final:>11,.0f}  ({a_final / a_inv:.2f}x)")
+print(f"{B_LABEL:18}: invested ${b_inv:>10,.0f} -> ${b_final:>11,.0f}  ({b_final / b_inv:.2f}x)")
 print("Compare the MULTIPLE, not the absolute final (deposit totals differ).")
 
 # === 5. PLOT: portfolio value over time ===
 plt.figure(figsize=(14, 7))
-plt.plot(sig_curve.index, sig_curve, label="Buy-the-signal")
-plt.plot(dca_curve.index, dca_curve, label="Monthly DCA")
-plt.title("__TICKER__  -  portfolio value, $__AMOUNT__ per deposit")
+plt.plot(a_curve.index, a_curve, label=A_LABEL)
+plt.plot(b_curve.index, b_curve, label=B_LABEL)
+plt.title("__TICKER__  -  portfolio value over time")
 plt.ylabel("Portfolio value ($)")
 plt.legend(); plt.grid(True, alpha=0.3); plt.tight_layout()
 plt.show()
 '''
 
 
-def full_contribution_script(strategy_code, ticker="SPY", start="2021-01-01", amount=1000.0) -> str:
-    """Assemble a standalone contribution backtest (signal-deposits vs monthly DCA, in dollars)."""
+def full_contribution_script(strategy_code, ticker="SPY", start="2021-01-01", legs=None) -> str:
+    """Assemble a standalone contribution backtest comparing two deposit legs (each its own cadence + amount)."""
+    if not legs:                                    # legacy default: signal-deposits vs monthly DCA @ $1000
+        legs = [{"cadence": "signal", "amount": 1000.0, "label": "Buy-the-signal"},
+                {"cadence": "monthly", "amount": 1000.0, "label": "Monthly DCA"}]
+    legs = (list(legs) + list(legs))[:2]            # ensure exactly two legs
+    a, b = legs[0], legs[1]
     return (_CONTRIB_TEMPLATE
             .replace("__TICKER__", ticker)
             .replace("__START__", str(start))
-            .replace("__AMOUNT__", f"{amount:.0f}")
+            .replace("__LEG_A_LABEL__", a["label"]).replace("__LEG_A_CADENCE__", a["cadence"])
+            .replace("__LEG_A_AMOUNT__", f"{a['amount']:.0f}")
+            .replace("__LEG_B_LABEL__", b["label"]).replace("__LEG_B_CADENCE__", b["cadence"])
+            .replace("__LEG_B_AMOUNT__", f"{b['amount']:.0f}")
             .replace("__STRATEGY_CODE__", strategy_code.strip()))

@@ -18,7 +18,9 @@ class BacktestState(TypedDict):
     period: str
     start_date: str         # extracted from the request ('since 2021' -> '2021-01-01'); "" = use period
     amount: float           # contribution mode: $ per deposit (default 1000)
-    contribution_result: dict   # contribution mode: {amount, signal:{n,invested,final}, dca:{...}}
+    legs: list              # contribution mode (UI-supplied): [{cadence, amount, label}, ...] - two
+                            # deposit schedules to compare; absent -> legacy signal-vs-monthly @ amount
+    contribution_result: dict   # contribution mode: {amount, legs, signal:{...}, dca:{...}}
     ledger: Annotated[list, add]
 
 

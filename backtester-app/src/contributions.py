@@ -28,8 +28,29 @@ def monthly_dates(prices):
     return prices.index[first_of_month]
 
 
+def weekly_dates(prices):
+    """First trading day of each calendar week - the schedule for $X/week DCA."""
+    first_of_week = ~prices.index.to_period("W").duplicated()
+    return prices.index[first_of_week]
+
+
 def signal_dates(prices, strategy):
     """Bars where the strategy fires (>0) - deposit on each such bar (e.g. each dip). Point-in-time:
     the signal at bar t sees only prices up to t, and we deposit at t's close (no look-ahead)."""
     fires = np.array([strategy(prices.iloc[: t + 1]) > 0 for t in range(len(prices))])
     return prices.index[fires]
+
+
+def schedule_dates(prices, cadence, strategy=None):
+    """Resolve a cadence label to deposit dates. 'weekly'/'monthly' are calendar schedules; 'signal'
+    uses the coder's strategy(history) (deposit on each bar it fires). One dispatcher so a contribution
+    leg can be ANY of the three - lets us compare e.g. weekly $250 vs monthly $1000 in one run."""
+    if cadence == "weekly":
+        return weekly_dates(prices)
+    if cadence == "monthly":
+        return monthly_dates(prices)
+    if cadence == "signal":
+        if strategy is None:
+            raise ValueError("cadence 'signal' needs a strategy(history) to fire on")
+        return signal_dates(prices, strategy)
+    raise ValueError(f"unknown cadence: {cadence!r} (expected signal | weekly | monthly)")

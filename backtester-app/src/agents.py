@@ -69,6 +69,50 @@ def classify(state):
         out["amount"] = amount
     return out
 
+
+_CADENCES = ("signal", "weekly", "monthly")
+
+LEGS_PROMPT = (
+    "A user is comparing TWO money-deposit schedules. Extract both. Reply EXACTLY two lines, nothing else:\n"
+    "LEG1: <cadence> <amount>\n"
+    "LEG2: <cadence> <amount>\n"
+    "cadence is ONE of: signal (deposit on a trading signal, e.g. 'buy the dip'), weekly, monthly.\n"
+    "amount is the dollars per deposit, a plain number.\n"
+    "Examples:\n"
+    "  'weekly $250 vs monthly $1000'            -> LEG1: weekly 250 / LEG2: monthly 1000\n"
+    "  'buy the dip $1000 vs DCA $1000 monthly'  -> LEG1: signal 1000 / LEG2: monthly 1000\n"
+)
+
+
+def _leg_label(cadence, amount):
+    nice = {"signal": "Signal", "weekly": "Weekly", "monthly": "Monthly"}.get(cadence, cadence.title())
+    return f"{nice} ${amount:,.0f}"
+
+
+def extract_legs(state):
+    """UI-ONLY helper (NOT a graph node): best-effort parse of the TWO schedules being compared, to
+    PREFILL the editable leg controls in the confirm panel. The user confirms/edits before running, so a
+    mis-parse is harmless. The CLI/eval path never calls this -> legacy signal-vs-monthly stays intact."""
+    reply = _strip_think(llm.invoke([SystemMessage(content=LEGS_PROMPT),
+                                     HumanMessage(content=state["request"])]).content)
+    legs = []
+    for line in reply.splitlines():
+        if line.strip().lower()[:4] in ("leg1", "leg2"):
+            parts = line.split(":", 1)[1].strip().split()
+            cadence = next((p.lower() for p in parts if p.lower() in _CADENCES), None)
+            amount = None
+            for p in parts:
+                try:
+                    amount = float(p.replace("$", "").replace(",", "")); break
+                except ValueError:
+                    continue
+            if cadence:
+                amt = amount or 1000.0
+                legs.append({"cadence": cadence, "amount": amt, "label": _leg_label(cadence, amt)})
+    print(f"[extract_legs] {legs}")
+    return {"legs": legs}
+
+
 ORCHESTRATOR_PROMPT = (
     "You are a quant strategist. Given a trading idea, produce a SPEC for a Python function "
     "strategy(history) that returns a target position. Output EXACTLY these sections, nothing else:\n"

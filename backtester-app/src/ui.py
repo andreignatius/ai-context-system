@@ -16,7 +16,7 @@ except Exception:
 
 import pandas as pd
 from src.graph import build_run_graph
-from src.agents import classify, write_spec
+from src.agents import classify, write_spec, extract_legs, _leg_label
 from src.runner import _load_strategy
 from src.engine import run_backtest
 from src.data import load_prices
@@ -66,21 +66,28 @@ def render(b):
         cr = b.get("contribution_result")
         px = b.get("prices")
         if cr:
-            s, d = cr["signal"], cr["dca"]
-            rng = f"  ·  {px.index[0].date()} -> {px.index[-1].date()}" if px is not None else ""
-            st.caption(f"${cr['amount']:,.0f} per deposit{rng}")
+            legs = cr.get("legs")
+            if legs:                                   # generic two-leg shape (cadence + own amount)
+                idx = [l["label"] for l in legs]
+                per_dep = [l["amount"] for l in legs]
+                rows = legs
+            else:                                      # legacy shape (signal vs monthly @ one amount)
+                rows = [cr["signal"], cr["dca"]]
+                idx = ["Buy-the-signal", "Monthly DCA"]
+                per_dep = [cr.get("amount", 1000.0)] * 2
+            if px is not None:
+                st.caption(f"{px.index[0].date()} -> {px.index[-1].date()}")
             comp = pd.DataFrame(
-                {"deposits": [s["n"], d["n"]],
-                 "invested": [s["invested"], d["invested"]],
-                 "final": [s["final"], d["final"]],
-                 "multiple": [s["final"] / s["invested"] if s["invested"] else 0.0,
-                              d["final"] / d["invested"] if d["invested"] else 0.0]},
-                index=["Buy-the-signal", "Monthly DCA"])
+                {"per deposit": per_dep,
+                 "deposits": [r["n"] for r in rows],
+                 "invested": [r["invested"] for r in rows],
+                 "final": [r["final"] for r in rows],
+                 "multiple": [r["final"] / r["invested"] if r["invested"] else 0.0 for r in rows]},
+                index=idx)
             st.dataframe(comp.style.format(
-                {"invested": "${:,.0f}", "final": "${:,.0f}", "multiple": "{:.2f}x"}))
-            if cr.get("signal_curve") is not None:      # portfolio value over time
-                st.line_chart(pd.DataFrame({"Buy-the-signal": cr["signal_curve"],
-                                            "Monthly DCA": cr["dca_curve"]}))
+                {"per deposit": "${:,.0f}", "invested": "${:,.0f}", "final": "${:,.0f}", "multiple": "{:.2f}x"}))
+            if cr.get("signal_curve") is not None:      # portfolio value over time (leg A vs leg B)
+                st.line_chart(pd.DataFrame({idx[0]: cr["signal_curve"], idx[1]: cr["dca_curve"]}))
             st.caption("Compare the MULTIPLE, not the absolute final (deposit totals differ).")
             if px is not None:
                 with st.expander("data (preview + download)"):
@@ -89,7 +96,7 @@ def render(b):
                                        file_name=f"{b.get('ticker', 'data')}.csv", mime="text/csv")
                 with st.expander("📄 full contribution script (reproducible end-to-end)"):
                     script = full_contribution_script(b["strategy_code"], b.get("ticker", "SPY"),
-                                                      px.index[0].date(), cr["amount"])
+                                                      px.index[0].date(), cr.get("legs"))
                     st.code(script, language="python")
                     st.download_button("Download full script (.py)", script,
                                        file_name=f"contribution_{b.get('ticker', 'SPY')}.py",
@@ -165,8 +172,31 @@ if draft:
     with st.chat_message("assistant"):
         st.info("Here's how I read your request — **edit the spec if needed, then run.** "
                 "Your words go straight to the coder (no LLM re-interpretation):")
-        st.caption(f"engine: **{draft['mode']}**  ·  start: **{draft.get('start_date') or '(sidebar period)'}**"
-                   f"  ·  ${draft.get('amount', 1000):,.0f} per deposit")
+        st.caption(f"engine: **{draft['mode']}**  ·  start: **{draft.get('start_date') or '(sidebar period)'}**")
+
+        # CONTRIBUTION: two editable legs (cadence + own amount) -> "weekly $250 vs monthly $1000".
+        # Direct user control (c2 philosophy); prefilled by extract_legs, but the user has final say.
+        leg_inputs = None
+        if draft.get("mode") == "contribution":
+            st.markdown("**Compare two deposit schedules** — set each leg's cadence + dollar amount:")
+            hint = list(draft.get("legs") or [])
+            while len(hint) < 2:                       # default the second leg to monthly DCA
+                hint.append({"cadence": "monthly", "amount": draft.get("amount", 1000.0)})
+            cad_opts = ["signal", "weekly", "monthly"]
+            leg_inputs = []
+            for i in range(2):
+                c1, c2 = st.columns(2)
+                hc = hint[i].get("cadence") if hint[i].get("cadence") in cad_opts else "monthly"
+                cad = c1.selectbox(f"Leg {chr(65 + i)} cadence", cad_opts,
+                                   index=cad_opts.index(hc), key=f"leg{i}_cad")
+                amt = c2.number_input(f"Leg {chr(65 + i)} $ / deposit", min_value=1.0,
+                                      value=float(hint[i].get("amount") or 1000.0), step=50.0, key=f"leg{i}_amt")
+                leg_inputs.append({"cadence": cad, "amount": amt})
+            if any(l["cadence"] == "signal" for l in leg_inputs):
+                st.caption("A **signal** leg deposits when the strategy fires — edit the spec below to define it.")
+        else:
+            st.caption(f"${draft.get('amount', 1000):,.0f} per deposit")
+
         edited_spec = st.text_area("interpreted spec (editable)", value=draft["spec"], height=320, key="spec_edit")
         run_clicked = st.button("✅ Run it", type="primary")
 
@@ -175,6 +205,9 @@ if draft:
         with st.spinner("running… (coder → engine → self-heal)"):
             state = {**draft, "spec": edited_spec, "prices": prices, "ticker": ticker, "period": period,
                      "fix_target": "", "feedback": ""}     # the EDITED spec is what the coder builds from
+            if leg_inputs:                                 # user-confirmed legs -> per-leg cadence + amount
+                state["legs"] = [{"cadence": l["cadence"], "amount": l["amount"],
+                                  "label": _leg_label(l["cadence"], l["amount"])} for l in leg_inputs]
             b = _run_graph().invoke(state, config={"callbacks": [_handler()]})
             b["prices"] = prices
             b["equity"] = None
@@ -191,5 +224,7 @@ if req := st.chat_input("Describe a strategy, or a money question…"):
     with st.spinner("reading your request…"):
         s.update(classify(s))                 # mode, start_date, amount (extracted)
         s.update(write_spec(s))               # the interpreted spec
+        if s.get("mode") == "contribution":   # prefill the two leg controls (UI-only; eval path untouched)
+            s.update(extract_legs(s))
     st.session_state.draft = s
     st.rerun()
