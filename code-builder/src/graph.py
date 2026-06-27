@@ -19,31 +19,31 @@ def run_sandbox(state) -> dict:
     return {"test_result": result, "status": status,
             "ledger": [BuildEvent("sandbox", "result", f"passed={result['passed']}\n{result['failures']}")]}
 
-def route_after_tests(state) -> str:
-    """After the sandbox. NOTE: within a build the ONLY automatic recovery is the CODER
-    retrying - tests are held fixed here. Whether the CODE or the TESTS is at fault is the
-    HUMAN's call, between builds (see dispatch / main.py's 'fix which?')."""
-    res = state["test_result"]
-    if res["passed"]:
-        print("[router] all tests pass -> DONE")
-        return "done"
+# def route_after_tests(state) -> str:
+#     """After the sandbox. NOTE: within a build the ONLY automatic recovery is the CODER
+#     retrying - tests are held fixed here. Whether the CODE or the TESTS is at fault is the
+#     HUMAN's call, between builds (see dispatch / main.py's 'fix which?')."""
+#     res = state["test_result"]
+#     if res["passed"]:
+#         print("[router] all tests pass -> DONE")
+#         return "done"
 
-    attempts = state.get("attempts", 0)
-    failed = [ln for ln in res["failures"].splitlines() if ln.startswith(("FAILED", "ERROR"))]
-    if not failed:
-        failed = ["(no FAILED/ERROR lines parsed - see the stuck-report for the full log)"]
+#     attempts = state.get("attempts", 0)
+#     failed = [ln for ln in res["failures"].splitlines() if ln.startswith(("FAILED", "ERROR"))]
+#     if not failed:
+#         failed = ["(no FAILED/ERROR lines parsed - see the stuck-report for the full log)"]
 
-    if attempts >= MAX_ATTEMPTS:
-        print(f"[router] still red after {attempts} coder attempts -> GIVE UP, hand to the human")
-        for ln in failed:
-            print(f"         {ln}")
-        return "done"
+#     if attempts >= MAX_ATTEMPTS:
+#         print(f"[router] still red after {attempts} coder attempts -> GIVE UP, hand to the human")
+#         for ln in failed:
+#             print(f"         {ln}")
+#         return "done"
 
-    print(f"[router] tests failed -> auto-retry the CODER (attempt {attempts}/{MAX_ATTEMPTS}); "
-          "tests held fixed, only the code is rewritten here")
-    for ln in failed:
-        print(f"         {ln}")
-    return "retry"
+#     print(f"[router] tests failed -> auto-retry the CODER (attempt {attempts}/{MAX_ATTEMPTS}); "
+#           "tests held fixed, only the code is rewritten here")
+#     for ln in failed:
+#         print(f"         {ln}")
+#     return "retry"
 
 def route_after_sandbox(state) -> str:
     if state["test_result"]["passed"]:
@@ -94,13 +94,20 @@ def build_graph():
     })
 
     # builder.set_entry_point("write_spec")
-    builder.add_edge("write_spec", "write_tests") # tests first (TDD, fixed target)
-    builder.add_conditional_edges("write_tests", after_write_tests, {   # <- replaces the static edge
-        "run_sandbox": "run_sandbox",
-        "write_code": "write_code",
-    })
+    # builder.add_edge("write_spec", "write_tests") # tests first (TDD, fixed target)
+    # builder.add_conditional_edges("write_tests", after_write_tests, {   # <- replaces the static edge
+    #     "run_sandbox": "run_sandbox",
+    #     "write_code": "write_code",
+    # })
     # builder.add_edge("write_tests", "write_code")
-    builder.add_edge("write_code", "run_sandbox")
+    # builder.add_edge("write_code", "run_sandbox")
+    
+    # FRESH build: spec fans OUT to tests + code (run concurrently); both fan IN to the sandbox barrier.
+    builder.add_edge("write_spec", "write_tests")
+    builder.add_edge("write_spec", "write_code")
+    builder.add_edge("write_tests", "run_sandbox")
+    builder.add_edge("write_code",  "run_sandbox")
+
     builder.add_conditional_edges("run_sandbox", route_after_sandbox, {   # was route_after_tests
         "done": END,
         "judge": "judge",
