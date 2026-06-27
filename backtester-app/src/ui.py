@@ -56,6 +56,12 @@ st.session_state.setdefault("draft", None)   # pending interpretation awaiting c
 
 
 def render(b):
+    if b.get("scope_error"):              # out of scope (e.g. identical legs / cross-asset) - refuse clearly
+        st.warning("⚠️ out of scope — " + b.get("run_result", {}).get("failures",
+                                                                       "this request isn't supported yet."))
+        with st.expander("interpreted spec"):
+            st.text(b.get("spec", ""))
+        return
     if b["status"] == "ok":
         st.success("✅ sound — the strategy runs and is valid")
     else:
@@ -200,7 +206,14 @@ if draft:
         edited_spec = st.text_area("interpreted spec (editable)", value=draft["spec"], height=320, key="spec_edit")
         run_clicked = st.button("✅ Run it", type="primary")
 
-    if run_clicked:
+    # pre-check: identical legs = an asset-vs-itself comparison -> refuse instantly (no wasted coder call).
+    # keeps the draft so the user can adjust a cadence/amount and re-run.
+    identical_legs = bool(leg_inputs) and len({(l["cadence"], l["amount"]) for l in leg_inputs}) == 1
+    if run_clicked and identical_legs:
+        st.error("⚠️ Both legs are identical (same cadence + amount) — that compares the asset to itself. "
+                 "If you meant two different assets (e.g. GOOG vs SPY), that isn't supported yet "
+                 "(one ticker per run). Change a cadence/amount, or pick a single asset.")
+    elif run_clicked:
         prices = _prices(ticker, period, draft.get("start_date") or start)
         with st.spinner("running… (coder → engine → self-heal)"):
             state = {**draft, "spec": edited_spec, "prices": prices, "ticker": ticker, "period": period,

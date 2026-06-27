@@ -37,6 +37,16 @@ def contribution_run(state):
         {"cadence": "signal", "amount": amount, "label": "Buy-the-signal"},
         {"cadence": "monthly", "amount": amount, "label": "Monthly DCA"},
     ]
+    # degenerate-comparison guard (Lesson 028 - detect-and-refuse, do NOT silently degrade): two IDENTICAL
+    # legs compare an asset to ITSELF. The usual cause is a cross-ASSET request ("GOOG vs SPY") that collapsed
+    # to one ticker - legs vary cadence + amount, NOT the asset (the engine runs ONE ticker per run).
+    if len(legs) >= 2 and all((l["cadence"], l["amount"]) == (legs[0]["cadence"], legs[0]["amount"]) for l in legs):
+        return {"status": "failed", "scope_error": True,
+                "run_result": {"passed": False, "metrics": {},
+                               "failures": "the two legs are IDENTICAL (same cadence + amount) - this compares an "
+                                           "asset to ITSELF. Comparing two different ASSETS (e.g. GOOG vs SPY) is "
+                                           "not supported yet: the backtester runs ONE ticker per run. Vary the "
+                                           "cadence or amount, or run each asset separately."}}
     needs_signal = any(leg.get("cadence") == "signal" for leg in legs)   # only then must the code be valid
     try:
         strategy = _load_strategy(state["strategy_code"]) if needs_signal else None
@@ -77,6 +87,8 @@ def route_after_run(state):
 
 def route_after_contribution(state):     # same self-healing brake as the position lane
     if state.get("status") == "ok":
+        return "done"
+    if state.get("scope_error"):         # out of scope -> the judge cannot fix the REQUEST; do not loop
         return "done"
     if state.get("attempts", 0) >= MAX_ATTEMPTS:
         return "done"                # escalate / give up
