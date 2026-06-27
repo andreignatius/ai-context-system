@@ -20,6 +20,55 @@ def _extract_code(text):
         return "\n".join(lines).strip()
     return text
 
+
+# ONE PROMPT, ONE JOB: mode classification kept separate from param extraction (combining the two
+# degraded mode accuracy - the critical routing decision). See Lesson 029.
+MODE_PROMPT = (
+    "You route a quant request to the right engine. Decide ONE word:\n"
+    "- position : the user wants a trading STRATEGY's performance (return / Sharpe / drawdown).\n"
+    "- contribution : the user asks about MONEY DEPOSITED over time - dollars, 'how much money', "
+    "putting in $X on a schedule or on a signal, dollar-cost averaging (DCA), 'total value'.\n"
+    "RULE: if the request mentions depositing dollars OR 'how much money', it is CONTRIBUTION "
+    "regardless of the trading signal it describes.\n"
+    "Reply with EXACTLY one word: position OR contribution. Nothing else."
+)
+
+PARAMS_PROMPT = (
+    "Extract two fields from a quant request. Reply EXACTLY two lines and nothing else:\n"
+    "START: the start date as YYYY-MM-DD if the user gives one ('since 2021' -> 2021-01-01), else none\n"
+    "AMOUNT: the dollars-per-deposit as a plain number if given ('$1k' -> 1000), else none\n"
+)
+
+def classify(state):
+    """M8 tool-selection + param extraction. TWO calls (one prompt, one job): mode classification
+    stays separate from param extraction so the critical routing decision is not degraded (Lesson 029)."""
+    req = state["request"]
+    mode_reply = _strip_think(llm.invoke([SystemMessage(content=MODE_PROMPT),
+                                          HumanMessage(content=req)]).content)
+    mode = "contribution" if "contribution" in mode_reply.lower() else "position"
+
+    params_reply = _strip_think(llm.invoke([SystemMessage(content=PARAMS_PROMPT),
+                                            HumanMessage(content=req)]).content)
+    start, amount = None, None
+    for line in params_reply.splitlines():
+        low = line.strip().lower()
+        if low.startswith("start:"):
+            val = line.split(":", 1)[1].strip()
+            start = val if ("-" in val and val.lower() != "none") else None   # a YYYY-MM-DD date
+        elif low.startswith("amount:"):
+            val = line.split(":", 1)[1].strip().replace("$", "").replace(",", "")
+            try:
+                amount = float(val)
+            except ValueError:
+                amount = None
+    print(f"[classify] mode={mode} start={start} amount={amount}")
+    out = {"mode": mode}
+    if start:
+        out["start_date"] = start
+    if amount:
+        out["amount"] = amount
+    return out
+
 ORCHESTRATOR_PROMPT = (
     "You are a quant strategist. Given a trading idea, produce a SPEC for a Python function "
     "strategy(history) that returns a target position. Output EXACTLY these sections, nothing else:\n"
@@ -27,6 +76,8 @@ ORCHESTRATOR_PROMPT = (
     "2. Signal logic (indicator + rule)\n"
     "3. Position mapping (long=1.0 / flat=0.0 / short=-1.0)\n"
     "4. Parameters (e.g. window lengths)\n"
+    "PRESERVE the user's EXACT quantitative definitions: 'N-day' means N consecutive days (NOT N%); "
+    "do not substitute or reinterpret the user's numbers or units.\n"
 )
 
 CODER_PROMPT = (
@@ -38,7 +89,9 @@ CODER_PROMPT = (
     "Return ONLY a single ```python fenced block defining strategy(history) - no prose.\n"
     "- `history` is a pandas Series: use history.iloc[-1] (and .iloc[-2]) for the latest values; "
     "do NOT use history[-1] - that is LABEL indexing and will KeyError.\n"
-
+    "- POINT-IN-TIME: decide for the CURRENT (last) bar using ONLY the MOST RECENT bars. Do NOT loop or "
+    "scan over all of history (that makes the signal fire on almost every bar). For 'N consecutive down "
+    "days', check the LAST N daily changes: (history.diff().iloc[-N:] < 0).all().\n"
 )
 
 JUDGE_PROMPT = (

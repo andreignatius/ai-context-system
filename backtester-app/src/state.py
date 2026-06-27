@@ -5,6 +5,7 @@ from dataclasses import dataclass
 
 class BacktestState(TypedDict):
     request: str
+    mode: str               # "position" | "contribution" - which engine to route to (M8)
     spec: str
     strategy_code: str
     run_result: dict        # from run_strategy: {passed, failures, metrics}
@@ -15,6 +16,9 @@ class BacktestState(TypedDict):
     prices: object          # price Series the build runs on (UI-supplied; falls back to default)
     ticker: str
     period: str
+    start_date: str         # extracted from the request ('since 2021' -> '2021-01-01'); "" = use period
+    amount: float           # contribution mode: $ per deposit (default 1000)
+    contribution_result: dict   # contribution mode: {amount, signal:{n,invested,final}, dca:{...}}
     ledger: Annotated[list, add]
 
 

@@ -11,3 +11,7 @@ langfuse==4.9.1
 python-dotenv==1.2.2
 numpy==2.4.6
 scipy==1.17.1
+# backtester-app (data + plotting)
+yfinance==0.2.58
+pandas==3.0.1
+matplotlib==3.11.0
