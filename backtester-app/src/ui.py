@@ -16,7 +16,7 @@ except Exception:
 
 import pandas as pd
 from src.graph import build_run_graph
-from src.agents import classify, write_spec, extract_legs, _leg_label, is_multi_asset_position
+from src.agents import classify, write_spec, extract_legs, _leg_label, is_multi_asset_position, extract_pair_tickers
 from src.runner import _load_strategy
 from src.engine import run_backtest
 from src.data import load_prices
@@ -65,6 +65,27 @@ def render(b, uid=""):                  # uid keeps widget IDs unique across rep
         st.success("✅ sound — the strategy runs and is valid")
     else:
         st.error("❌ stuck — the judge gave up after retries")
+
+    if b.get("mode") == "pairs":
+        pr = b.get("pairs_result")
+        if pr:
+            st.caption(f"**{pr['ticker_a']} vs {pr['ticker_b']}**  ·  log-spread z-score · dollar-neutral")
+            m = pr["metrics"]
+            c = st.columns(4)
+            c[0].metric("Total return", f"{m['total_return']:+.1%}")
+            c[1].metric("CAGR", f"{m['ann_return']:+.1%}")
+            c[2].metric("Sharpe", f"{m['sharpe']:.2f}")
+            c[3].metric("Max drawdown", f"{m['max_drawdown']:.1%}")
+            st.caption(f"{m['n_trades']} trades")
+            if pr.get("equity_curve") is not None:
+                st.line_chart(pr["equity_curve"].rename("spread equity (growth of $1)"))
+        elif b.get("run_result", {}).get("failures"):
+            st.warning(b["run_result"]["failures"])
+        st.code(b["strategy_code"], language="python")
+        with st.expander("strategy spec"):
+            st.text(b["spec"])
+        return
+
 
     # CONTRIBUTION mode: a dollar comparison (different shape from the position render)
     if b.get("mode") == "contribution":
@@ -279,10 +300,16 @@ if req := st.chat_input("Describe a strategy, or a money question…"):
         s.update(write_spec(s)); status.write("✓ drafted the spec")
 
         if is_multi_asset_position(req, s.get("mode")):
-            s["scope_error"] = True
-            s["scope_msg"] = ("Pairs / multi-asset strategies aren't supported yet — this engine runs a "
-                            "single-asset strategy. Try a single ticker, or a contribution comparison "
-                            "for two assets (e.g. \"GOOG vs SPY monthly\").")
+            tks = extract_pair_tickers(req)
+            if len(tks) == 2:                              # exactly two tickers -> PAIRS route
+                s["mode"] = "pairs"
+                s["ticker"], s["ticker_b"] = tks[0], tks[1]
+                status.write(f"✓ pairs: **{tks[0]} vs {tks[1]}**")
+            else:                                          # 0/1 or >2 tickers -> not a clean pair, refuse
+                s["scope_error"] = True
+                s["scope_msg"] = ("Pairs / multi-asset strategies aren't supported yet — this engine runs a "
+                                "single-asset strategy. Try a single ticker, or a contribution comparison "
+                                "for two assets (e.g. \"GOOG vs SPY monthly\").")
         elif s.get("mode") == "contribution":
             s.update(extract_legs(s)); status.write("✓ parsed the legs")
         status.update(label="Ready ✓", state="complete")

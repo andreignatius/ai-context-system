@@ -1,7 +1,7 @@
 from langgraph.graph import StateGraph, START, END
 from .state import BacktestState, BuildEvent
 from .agents import write_spec, write_code, judge, classify
-from .runner import run_strategy, _load_strategy
+from .runner import run_strategy, _load_strategy, run_pair_strategy
 from .contributions import run_contributions, schedule_dates
 from .data import load_prices
 from .config import MAX_ATTEMPTS
@@ -137,8 +137,36 @@ def contribution_run(state):
           f"{b['label']} ${b['final']:,.0f}/${b['invested']:,.0f}")
     return {"status": "ok", "contribution_result": result}
 
+def pairs_run(state):
+    """PAIRS engine: fetch A + B, run the coder's strategy_pair through the spread engine."""
+    ticker_a = state.get("ticker") or "SPY"
+    ticker_b = state.get("ticker_b") or "QQQ"
+    start = state.get("start_date")
+    try:
+        pa = load_prices(ticker_a, period="5y", start=start)
+        pb = load_prices(ticker_b, period="5y", start=start)
+        if len(pa) == 0 or len(pb) == 0:
+            raise ValueError("empty data")
+    except Exception as e:
+        return {"status": "failed", "scope_error": True,
+                "run_result": {"passed": False, "metrics": {},
+                               "failures": f"couldn't fetch {ticker_a}/{ticker_b} - check the tickers ({e})"}}
+    result = run_pair_strategy(state["strategy_code"], pa, pb)
+    print(f"[pairs] {ticker_a}-{ticker_b} passed: {result['passed']}")
+    pr = {"ticker_a": ticker_a, "ticker_b": ticker_b,
+          "metrics": result["metrics"], "equity_curve": result.get("equity_curve")}
+    return {"run_result": result, "pairs_result": pr,
+            "status": "ok" if result["passed"] else "failed",
+            "ledger": [BuildEvent("pairs", "result", result["failures"] or str(result["metrics"]))]}
+
+
 def route_after_code(state):
-    return "contribution" if state.get("mode") == "contribution" else "position"
+    m = state.get("mode")
+    if m == "contribution":
+        return "contribution"
+    if m == "pairs":
+        return "pairs"
+    return "position"
 
 def route_after_run(state):
     if state["run_result"]["passed"]:
@@ -156,6 +184,15 @@ def route_after_contribution(state):     # same self-healing brake as the positi
         return "done"                # escalate / give up
     return "judge"
 
+def route_after_pairs(state):            # same self-healing brake as the position lane
+    if state["run_result"]["passed"]:
+        return "done"
+    if state.get("scope_error"):
+        return "done"
+    if state.get("attempts", 0) >= MAX_ATTEMPTS:
+        return "done"
+    return "judge"
+
 def dispatch(state):
     return state["fix_target"]       # "code" | "spec"
 
@@ -167,17 +204,19 @@ def build_graph():
     g.add_node("run", run_node)
     g.add_node("judge", judge)
     g.add_node("contribution_run", contribution_run)
+    g.add_node("pairs_run", pairs_run)
 
     g.add_edge(START, "classify")        # M8: classify the request, then route to the right engine
     g.add_edge("classify", "write_spec")
     g.add_edge("write_spec", "write_code")
     # branch on mode: position -> the judge-looped sandbox; contribution -> the cash-flow engine
     g.add_conditional_edges("write_code", route_after_code,
-                            {"position": "run", "contribution": "contribution_run"})
+                            {"position": "run", "contribution": "contribution_run", "pairs": "pairs_run"})
     g.add_conditional_edges("run", route_after_run, {"done": END, "judge": "judge"})
     g.add_conditional_edges("judge", dispatch, {"code": "write_code", "spec": "write_spec"})
     # contribution lane now self-heals too: failure -> judge -> write_code -> (route) -> contribution_run
     g.add_conditional_edges("contribution_run", route_after_contribution, {"done": END, "judge": "judge"})
+    g.add_conditional_edges("pairs_run", route_after_pairs, {"done": END, "judge": "judge"})
     return g.compile()
 
 
@@ -191,12 +230,14 @@ def build_run_graph():
     g.add_node("run", run_node)
     g.add_node("judge", judge)
     g.add_node("contribution_run", contribution_run)
+    g.add_node("pairs_run", pairs_run)
 
     g.add_edge(START, "write_code")          # the spec is already in state (confirmed by the user)
     g.add_edge("write_spec", "write_code")
     g.add_conditional_edges("write_code", route_after_code,
-                            {"position": "run", "contribution": "contribution_run"})
+                            {"position": "run", "contribution": "contribution_run", "pairs": "pairs_run"})
     g.add_conditional_edges("run", route_after_run, {"done": END, "judge": "judge"})
     g.add_conditional_edges("judge", dispatch, {"code": "write_code", "spec": "write_spec"})
     g.add_conditional_edges("contribution_run", route_after_contribution, {"done": END, "judge": "judge"})
+    g.add_conditional_edges("pairs_run", route_after_pairs, {"done": END, "judge": "judge"})
     return g.compile()

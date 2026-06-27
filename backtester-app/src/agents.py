@@ -8,6 +8,97 @@ from .state import BuildEvent
 _PAIRS_WORDS = ("pairs", "spread", "relative value", "market neutral", "cointegrat", "ratio")
 _NOT_TICKERS = {"RSI","SMA","EMA","MACD","DCA","ETF","USD","AND","THE","SD","ATR","ADX","VWAP","OBV"}
 
+# ONE PROMPT, ONE JOB: mode classification kept separate from param extraction (combining the two
+# degraded mode accuracy - the critical routing decision). See Lesson 029.
+MODE_PROMPT = (
+    "You route a quant request to the right engine. Reply EXACTLY one word: position OR contribution.\n"
+    "- position : the user wants a trading STRATEGY's performance (return / Sharpe / drawdown), EVEN IF they "
+    "mention STARTING CAPITAL in dollars ('start with $10k', 'trade 100% of equity each signal').\n"
+    "- contribution : money DEPOSITED REPEATEDLY over time - DCA, '$X every week/month', 'deposit $X on each "
+    "dip', comparing two DCA schedules, 'how much money would I have'.\n"
+    "KEY TEST: a dollar amount tied to a CADENCE or a repeated event ('$1k monthly', '$250 weekly', '$1k on "
+    "each dip') = CONTRIBUTION. A one-time STARTING CAPITAL ('start with $X', 'trade equity') = POSITION.\n"
+    "Examples:\n"
+    "  'long SPY when RSI<30, start with $10k'              -> position\n"
+    "  '50/200 SMA crossover on SPY'                        -> position\n"
+    "  'DCA $1k monthly into SPY'                           -> contribution\n"
+    "  'compare GOOG monthly vs SPY monthly, $1k each'      -> contribution\n"
+    "  'buy the dip: $1000 on each drawdown vs $1k monthly' -> contribution\n"
+)
+
+PARAMS_PROMPT = (
+    "Extract three fields from a quant request. Reply EXACTLY three lines and nothing else:\n"
+    "TICKER: the stock/ETF/crypto symbol in UPPERCASE if the user names ONE asset (e.g. IWM, QQQ, BTC-USD), "
+    "else none\n"
+    "START: the start date as YYYY-MM-DD if the user gives one ('since 2021' -> 2021-01-01), else none\n"
+    "AMOUNT: the dollars-per-deposit as a plain number if given ('$1k' -> 1000), else none\n"
+)
+
+_CADENCES = ("signal", "weekly", "monthly")
+
+LEGS_PROMPT = (
+    "A user is comparing TWO money-deposit schedules. Extract both. Reply EXACTLY two lines, nothing else:\n"
+    "LEG1: <ticker> <cadence> <amount>\n"
+    "LEG2: <ticker> <cadence> <amount>\n"
+    "ticker is the stock/ETF/crypto symbol in UPPERCASE (GOOG, SPY, AAPL, BTC-USD). If the user names only "
+    "ONE asset, use it for BOTH legs; if NONE is named, write SPY.\n"
+    "cadence is ONE of: signal (deposit on a trading signal, e.g. 'buy the dip'), weekly, monthly.\n"
+    "amount is the dollars per deposit, a plain number.\n"
+    "Examples:\n"
+    "  'GOOG monthly vs SPY monthly, $1k each'   -> LEG1: GOOG monthly 1000 / LEG2: SPY monthly 1000\n"
+    "  'weekly $250 vs monthly $1000 into QQQ'   -> LEG1: QQQ weekly 250 / LEG2: QQQ monthly 1000\n"
+    "  'buy the dip $1000 vs DCA $1000 monthly'  -> LEG1: SPY signal 1000 / LEG2: SPY monthly 1000\n"
+)
+
+
+ORCHESTRATOR_PROMPT = (
+    "You are a quant strategist. Given a trading idea, produce a SPEC for a Python function "
+    "strategy(history) that returns a target position. Output EXACTLY these sections, nothing else:\n"
+    "1. Strategy name + one-line description\n"
+    "2. Signal logic (indicator + rule)\n"
+    "3. Position mapping (long=1.0 / flat=0.0 / short=-1.0)\n"
+    "4. Parameters (e.g. window lengths)\n"
+    "PRESERVE the user's EXACT quantitative definitions: 'N-day' means N consecutive days (NOT N%); "
+    "do not substitute or reinterpret the user's numbers or units.\n"
+)
+
+CODER_PROMPT = (
+    "You are a Python quant coder. Implement the spec as a function `strategy(history)`:\n"
+    "- `history` is a pandas Series of prices up to AND INCLUDING the current bar.\n"
+    "- return a float target position in [-1, 1] to hold from the NEXT bar.\n"
+    "- CRITICAL: use ONLY `history` - NEVER index beyond it or peek at future data.\n"
+    "- handle the warm-up period (return 0.0 until there are enough bars).\n"
+    "Return ONLY a single ```python fenced block defining strategy(history) - no prose.\n"
+    "- `history` is a pandas Series: use history.iloc[-1] (and .iloc[-2]) for the latest values; "
+    "do NOT use history[-1] - that is LABEL indexing and will KeyError.\n"
+    "- POINT-IN-TIME: decide for the CURRENT (last) bar using ONLY the MOST RECENT bars. Do NOT loop or "
+    "scan over all of history (that makes the signal fire on almost every bar). For 'N consecutive down "
+    "days', check the LAST N daily changes: (history.diff().iloc[-N:] < 0).all().\n"
+)
+
+CODER_PAIRS_PROMPT = (
+    "You are a Python quant coder. Implement the spec as a PAIRS function "
+    "`strategy_pair(history_a, history_b)`:\n"
+    "- history_a, history_b are pandas Series of the two assets' prices up to AND INCLUDING the current bar.\n"
+    "- return a float SPREAD position in [-1, 1]: +1 = long the spread (long A / short B), -1 = short, 0 = flat.\n"
+    "- CRITICAL: use ONLY history_a / history_b - NEVER index beyond them or peek at the future.\n"
+    "- handle warm-up (return 0.0 until enough bars).\n"
+    "- POINT-IN-TIME: compute any rolling stat (z-score, hedge ratio) over the MOST RECENT bars only "
+    "(e.g. .iloc[-lookback:]), NOT the full history. Use .iloc[-1] for the latest value, not [-1].\n"
+    "Return ONLY a single ```python fenced block defining strategy_pair(history_a, history_b) - no prose.\n"
+)
+
+
+JUDGE_PROMPT = (
+    "You are a triage judge for a quant strategy builder. A generated strategy(history) function "
+    "failed its soundness checks. Decide WHO is at fault:\n"
+    "- code : the strategy IMPLEMENTATION is buggy (the idea IS a valid position strategy)\n"
+    "- spec : the request/spec is NOT a position strategy at all (e.g. a comparison or research "
+    "question), so no sound strategy(history) can satisfy it\n"
+    "Reply EXACTLY two lines and nothing else:\n"
+    "CULPRIT: <code|spec>\n"
+    "REASON: <one short sentence>"
+)
 
 llm = get_llm()
 
@@ -35,32 +126,13 @@ def is_multi_asset_position(request: str, mode: str) -> bool:
     toks = set(re.findall(r"\b[A-Z]{2,5}(?:-USD)?\b", request)) - _NOT_TICKERS
     return len(toks) >= 2                                       # 2+ distinct tickers named
 
-
-# ONE PROMPT, ONE JOB: mode classification kept separate from param extraction (combining the two
-# degraded mode accuracy - the critical routing decision). See Lesson 029.
-MODE_PROMPT = (
-    "You route a quant request to the right engine. Reply EXACTLY one word: position OR contribution.\n"
-    "- position : the user wants a trading STRATEGY's performance (return / Sharpe / drawdown), EVEN IF they "
-    "mention STARTING CAPITAL in dollars ('start with $10k', 'trade 100% of equity each signal').\n"
-    "- contribution : money DEPOSITED REPEATEDLY over time - DCA, '$X every week/month', 'deposit $X on each "
-    "dip', comparing two DCA schedules, 'how much money would I have'.\n"
-    "KEY TEST: a dollar amount tied to a CADENCE or a repeated event ('$1k monthly', '$250 weekly', '$1k on "
-    "each dip') = CONTRIBUTION. A one-time STARTING CAPITAL ('start with $X', 'trade equity') = POSITION.\n"
-    "Examples:\n"
-    "  'long SPY when RSI<30, start with $10k'              -> position\n"
-    "  '50/200 SMA crossover on SPY'                        -> position\n"
-    "  'DCA $1k monthly into SPY'                           -> contribution\n"
-    "  'compare GOOG monthly vs SPY monthly, $1k each'      -> contribution\n"
-    "  'buy the dip: $1000 on each drawdown vs $1k monthly' -> contribution\n"
-)
-
-PARAMS_PROMPT = (
-    "Extract three fields from a quant request. Reply EXACTLY three lines and nothing else:\n"
-    "TICKER: the stock/ETF/crypto symbol in UPPERCASE if the user names ONE asset (e.g. IWM, QQQ, BTC-USD), "
-    "else none\n"
-    "START: the start date as YYYY-MM-DD if the user gives one ('since 2021' -> 2021-01-01), else none\n"
-    "AMOUNT: the dollars-per-deposit as a plain number if given ('$1k' -> 1000), else none\n"
-)
+def extract_pair_tickers(request: str) -> list:
+    """Distinct ticker-like tokens in order (for pairs: the first two = A, B)."""
+    seen = []
+    for t in re.findall(r"\b[A-Z]{2,5}(?:-USD)?\b", request):
+        if t not in _NOT_TICKERS and t not in seen:
+            seen.append(t)
+    return seen
 
 def classify(state):
     """M8 tool-selection + param extraction. TWO calls (one prompt, one job): mode classification
@@ -96,23 +168,6 @@ def classify(state):
     if amount:
         out["amount"] = amount
     return out
-
-
-_CADENCES = ("signal", "weekly", "monthly")
-
-LEGS_PROMPT = (
-    "A user is comparing TWO money-deposit schedules. Extract both. Reply EXACTLY two lines, nothing else:\n"
-    "LEG1: <ticker> <cadence> <amount>\n"
-    "LEG2: <ticker> <cadence> <amount>\n"
-    "ticker is the stock/ETF/crypto symbol in UPPERCASE (GOOG, SPY, AAPL, BTC-USD). If the user names only "
-    "ONE asset, use it for BOTH legs; if NONE is named, write SPY.\n"
-    "cadence is ONE of: signal (deposit on a trading signal, e.g. 'buy the dip'), weekly, monthly.\n"
-    "amount is the dollars per deposit, a plain number.\n"
-    "Examples:\n"
-    "  'GOOG monthly vs SPY monthly, $1k each'   -> LEG1: GOOG monthly 1000 / LEG2: SPY monthly 1000\n"
-    "  'weekly $250 vs monthly $1000 into QQQ'   -> LEG1: QQQ weekly 250 / LEG2: QQQ monthly 1000\n"
-    "  'buy the dip $1000 vs DCA $1000 monthly'  -> LEG1: SPY signal 1000 / LEG2: SPY monthly 1000\n"
-)
 
 
 def _leg_label(cadence, amount, ticker=None):
@@ -160,42 +215,6 @@ def extract_legs(state):
     return {"legs": legs}
 
 
-ORCHESTRATOR_PROMPT = (
-    "You are a quant strategist. Given a trading idea, produce a SPEC for a Python function "
-    "strategy(history) that returns a target position. Output EXACTLY these sections, nothing else:\n"
-    "1. Strategy name + one-line description\n"
-    "2. Signal logic (indicator + rule)\n"
-    "3. Position mapping (long=1.0 / flat=0.0 / short=-1.0)\n"
-    "4. Parameters (e.g. window lengths)\n"
-    "PRESERVE the user's EXACT quantitative definitions: 'N-day' means N consecutive days (NOT N%); "
-    "do not substitute or reinterpret the user's numbers or units.\n"
-)
-
-CODER_PROMPT = (
-    "You are a Python quant coder. Implement the spec as a function `strategy(history)`:\n"
-    "- `history` is a pandas Series of prices up to AND INCLUDING the current bar.\n"
-    "- return a float target position in [-1, 1] to hold from the NEXT bar.\n"
-    "- CRITICAL: use ONLY `history` - NEVER index beyond it or peek at future data.\n"
-    "- handle the warm-up period (return 0.0 until there are enough bars).\n"
-    "Return ONLY a single ```python fenced block defining strategy(history) - no prose.\n"
-    "- `history` is a pandas Series: use history.iloc[-1] (and .iloc[-2]) for the latest values; "
-    "do NOT use history[-1] - that is LABEL indexing and will KeyError.\n"
-    "- POINT-IN-TIME: decide for the CURRENT (last) bar using ONLY the MOST RECENT bars. Do NOT loop or "
-    "scan over all of history (that makes the signal fire on almost every bar). For 'N consecutive down "
-    "days', check the LAST N daily changes: (history.diff().iloc[-N:] < 0).all().\n"
-)
-
-JUDGE_PROMPT = (
-    "You are a triage judge for a quant strategy builder. A generated strategy(history) function "
-    "failed its soundness checks. Decide WHO is at fault:\n"
-    "- code : the strategy IMPLEMENTATION is buggy (the idea IS a valid position strategy)\n"
-    "- spec : the request/spec is NOT a position strategy at all (e.g. a comparison or research "
-    "question), so no sound strategy(history) can satisfy it\n"
-    "Reply EXACTLY two lines and nothing else:\n"
-    "CULPRIT: <code|spec>\n"
-    "REASON: <one short sentence>"
-)
-
 def write_spec(state):
     if state.get("fix_target") == "spec" and state.get("spec"):
         task = (f"Original request:\n{state['request']}\n\n"
@@ -211,17 +230,19 @@ def write_spec(state):
     return {"spec": spec, "ledger": [BuildEvent("orchestrator", "spec", spec)]}
 
 def write_code(state):
+    pairs = state.get("mode") == "pairs"
+    prompt = CODER_PAIRS_PROMPT if pairs else CODER_PROMPT
+    sig = "strategy_pair(history_a, history_b)" if pairs else "strategy(history)"
     if state.get("fix_target") == "code" and state.get("strategy_code"):
         task = (f"SPEC:\n{state['spec']}\n\n"
                 f"Your PREVIOUS strategy code:\n{state['strategy_code']}\n\n"
                 f"It FAILED soundness checks:\n{state.get('feedback', '')}\n\n"
-                "Fix the strategy so it passes. Return ONLY the corrected strategy(history) "
-                "in a single ```python block.")
+                f"Fix the strategy so it passes. Return ONLY the corrected {sig} in a single ```python block.")
         print("[coder] fixing strategy code")
     else:
         task = f"SPEC:\n{state['spec']}"
-        print("[coder] wrote strategy code")
-    msgs = [SystemMessage(content=CODER_PROMPT), HumanMessage(content=task)]
+        print(f"[coder] wrote {'pairs ' if pairs else ''}strategy code")
+    msgs = [SystemMessage(content=prompt), HumanMessage(content=task)]
     code = _extract_code(_strip_think(llm.invoke(msgs).content))
     return {"strategy_code": code, "ledger": [BuildEvent("coder", "strategy_code", code)]}
 

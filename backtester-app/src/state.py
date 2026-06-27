@@ -20,6 +20,8 @@ class BacktestState(TypedDict):
     amount: float           # contribution mode: $ per deposit (default 1000)
     legs: list              # contribution mode (UI-supplied): [{cadence, amount, label}, ...] - two
                             # deposit schedules to compare; absent -> legacy signal-vs-monthly @ amount
+    ticker_b: str           # pairs mode: the SECOND ticker (ticker = A, ticker_b = B)
+    pairs_result: dict      # pairs mode: {ticker_a, ticker_b, metrics, equity_curve}
     scope_error: bool       # the request is OUT OF SCOPE (e.g. identical legs / cross-asset) - refuse,
                             # do NOT self-heal (the judge can fix code, not an unsupported request)
     contribution_result: dict   # contribution mode: {amount, legs, signal:{...}, dca:{...}}

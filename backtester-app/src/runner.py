@@ -11,7 +11,7 @@ import traceback
 import ast
 
 from .engine import run_backtest
-
+from .pairs import run_pairs_backtest
 
 BANNED_CALLS = {"eval", "exec", "open", "__import__", "compile", "getattr", "globals"}
 ALLOWED_IMPORTS = {"pandas", "numpy", "math"}
@@ -72,3 +72,36 @@ def run_strategy(strategy_code: str, prices) -> dict:
         failures.append("strategy never takes a position (inert) - warm-up may exceed the data length")
 
     return {"passed": len(failures) == 0, "failures": "; ".join(failures), "metrics": metrics}
+
+def _load_strategy_pair(code: str):
+    _validate(code)  # SECURITY: same AST sandbox as single-asset
+    namespace = {"pd": pd, "np": np}
+    exec(code, namespace)
+    if "strategy_pair" not in namespace or not callable(namespace["strategy_pair"]):
+        raise ValueError("code must define a callable `strategy_pair(history_a, history_b)`")
+    return namespace["strategy_pair"]
+
+
+def run_pair_strategy(code: str, prices_a, prices_b) -> dict:
+    try:
+        strat = _load_strategy_pair(code)
+    except Exception as e:
+        return {"passed": False, "failures": f"load error: {e}", "metrics": {}}
+    try:
+        result = run_pairs_backtest(prices_a, prices_b, strat)
+    except Exception as e:
+        return {"passed": False, "failures": f"runtime error: {type(e).__name__}: {e}", "metrics": {}}
+    idx = prices_a.index.intersection(prices_b.index)
+    a, b = prices_a.reindex(idx), prices_b.reindex(idx)
+    targets = pd.Series([strat(a.iloc[: t + 1], b.iloc[: t + 1]) for t in range(len(idx))], dtype=float)
+    failures = []
+    if not np.isfinite(targets).all():
+        failures.append("strategy produced non-finite positions")
+    if (targets.abs() > 1.0 + 1e-9).any():
+        failures.append("positions out of range [-1, 1]")
+    if result.n_trades == 0:
+        failures.append("strategy never takes a position (inert)")
+    metrics = {"total_return": result.total_return, "ann_return": result.ann_return,
+               "sharpe": result.sharpe, "max_drawdown": result.max_drawdown, "n_trades": result.n_trades}
+    return {"passed": len(failures) == 0, "failures": "; ".join(failures),
+            "metrics": metrics, "equity_curve": result.equity_curve}
