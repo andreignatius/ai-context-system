@@ -212,7 +212,14 @@ if draft:
         else:
             st.caption(f"${draft.get('amount', 1000):,.0f} per deposit")
 
-        edited_spec = st.text_area("interpreted spec (editable)", value=draft["spec"], height=320, key="spec_edit")
+        # the spec/strategy is only used by a 'signal' leg. For a calendar-only DCA comparison there is no
+        # strategy, so hide the (irrelevant, often misframed) spec box rather than confuse the user with it.
+        needs_spec = (draft.get("mode") != "contribution") or any(l["cadence"] == "signal" for l in (leg_inputs or []))
+        if needs_spec:
+            edited_spec = st.text_area("interpreted spec (editable)", value=draft["spec"], height=320, key="spec_edit")
+        else:
+            st.caption("No strategy needed — this is a calendar DCA comparison (driven by the leg controls above).")
+            edited_spec = draft["spec"]                 # carried through but unused by the engine for calendar legs
         run_clicked = st.button("✅ Run it", type="primary")
 
     # pre-check: identical legs = an asset-vs-itself comparison -> refuse instantly (no wasted coder call).

@@ -167,6 +167,10 @@ def full_contribution_script(strategy_code, ticker="SPY", start="2021-01-01", le
                 {"cadence": "monthly", "amount": 1000.0, "label": "Monthly DCA"}]
     legs = (list(legs) + list(legs))[:2]            # ensure exactly two legs
     a, b = legs[0], legs[1]
+    # the strategy is only used by a 'signal' leg; for a calendar-only comparison, omit the (often broken,
+    # always dead) LLM strategy and emit a trivial stub so the reproducible script stays clean.
+    has_signal = any(l.get("cadence") == "signal" for l in legs)
+    strat = strategy_code.strip() if has_signal else "def strategy(history):   # unused: no 'signal' leg\n    return 0.0"
     return (_CONTRIB_TEMPLATE
             .replace("__A_TICKER__", a.get("ticker") or ticker)
             .replace("__B_TICKER__", b.get("ticker") or ticker)
@@ -175,4 +179,4 @@ def full_contribution_script(strategy_code, ticker="SPY", start="2021-01-01", le
             .replace("__LEG_A_AMOUNT__", f"{a['amount']:.0f}")
             .replace("__LEG_B_LABEL__", b["label"]).replace("__LEG_B_CADENCE__", b["cadence"])
             .replace("__LEG_B_AMOUNT__", f"{b['amount']:.0f}")
-            .replace("__STRATEGY_CODE__", strategy_code.strip()))
+            .replace("__STRATEGY_CODE__", strat))
