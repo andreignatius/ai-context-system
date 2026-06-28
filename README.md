@@ -1,13 +1,18 @@
 # AI Context Management System
 
-> **🚀 Live demo:** [code-builder.streamlit.app](https://code-builder.streamlit.app) — the capstone multi-agent code-builder, running live on DeepInfra (Qwen2.5-Coder-32B). Type a function request and watch the orchestrator → QA → coder → judge loop build and self-verify it. *(Free tier: first load after idle takes ~30s to wake.)*
+> **🚀 Live demos**
+> - **[quant-backtester.streamlit.app](https://quant-backtester.streamlit.app)** — an AI quant backtester that's **honest about the three ways backtests lie** (look-ahead, overfit, costs). Plain-English strategy → generated, *graded* backtest. *(See the [honesty stack](#backtester-backtester-app-the-honesty-stack) below.)*
+> - **[code-builder.streamlit.app](https://code-builder.streamlit.app)** — the capstone multi-agent code-builder. Type a function request and watch the orchestrator → QA → coder → judge loop build and self-verify it.
+>
+> *(Free tier: first load after idle takes ~30s to wake.)*
 
 ## Overview
 An in-house AI system for managing LLM context using LangGraph, with a focus on **Write, Select, Compress, Isolate** strategies. Built for local execution with Ollama.
 
-Two parts:
+Three parts:
 - **Foundations** (`langgraph-app/`) — a chat/RAG agent that builds each context pillar (Write / Select / Compress / Isolate) end to end.
 - **Capstone** (`code-builder/`) — a **multi-agent, self-healing code-builder** that applies the thesis: an orchestrator writes a spec, a QA agent writes tests *from the spec alone* (TDD), a coder implements it, a sandbox runs the tests, and an **auto-judge** routes each failure to the agent at fault (code / tests / spec) until it converges — or escalates to a human. Shipped as a FastAPI service, containerized with Docker, scored by an eval harness, and fully traced in Langfuse.
+- **Domain port** (`backtester-app/`) — the capstone's architecture retargeted to **quant backtesting**: plain-English strategy → generated code → a backtest graded against a known-correct baseline and stress-tested out-of-sample. The differentiator is the **[honesty stack](#backtester-backtester-app-the-honesty-stack)** (sound → correct → robust → net-of-cost). Live on DeepInfra, Langfuse-traced.
 
 ## Stack
 - **Framework**: LangGraph + LangChain
@@ -46,6 +51,20 @@ Mapped to the Write / Select / Compress / Isolate thesis.
 - [x] FastAPI service (POST /build) + Docker container
 - [x] Langfuse: every agent call traced (the whole build is a nested tree)
 - [~] Tools (M8) / Guardrails (M9): spirit via the sandbox; model tool-calling + real isolation = future work
+
+## Backtester (backtester-app): the honesty stack
+> **🚀 Live:** [quant-backtester.streamlit.app](https://quant-backtester.streamlit.app) — full write-up: [`backtester-app/README.md`](backtester-app/README.md) · *[28-Jun]*
+
+Plain-English strategy or money question → a generated, **graded** backtest. NL→code is a crowded space; the differentiator is being **honest about the three ways a backtest lies** — most tools report a pretty equity curve and stop:
+
+| Gate | What it catches | How |
+|------|-----------------|-----|
+| **Sound** | code that crashes or peeks at the future | point-in-time loop + 1-bar lag → look-ahead is *structurally impossible*, not just discouraged |
+| **Correct** | plausible-but-wrong logic | graded against a **known-correct baseline** (the "ruler"), not self-graded tests |
+| **Robust** | curve-fit / overfit | rolling **out-of-sample** windows → *"positive in 4/12, beats buy-and-hold in 3 — beta, not alpha"* |
+| **Net-of-cost** | churn flattered by zero fees | default ~5 bps/side → a 240-trade strategy's Sharpe flips **+0.38 → −0.38** |
+
+Three engines behind one chat box: **position** (single-asset, growth-of-$1), **contribution** (DCA / cash-flow comparison), **pairs** (dollar-neutral spread). Plus a self-healing judge loop, an editable-spec confirm flow (human-in-the-loop on intent), one-click templates + name→ticker resolution, and **AST-sandboxed** execution of the LLM-written strategy. DeepInfra-backed, Langfuse-traced.
 
 ## Project Structure
 ```
@@ -86,7 +105,11 @@ ai-context-system/
 │       ├── api.py          # FastAPI service: POST /build (M11)
 │       ├── ui.py           # Streamlit web UI (chat + human-in-the-loop fix)
 │       └── evals.py        # eval harness: autonomous pass-rate (M10)
-# generated, gitignored: chroma_db/, checkpoints.sqlite, code-builder/.env
+├── backtester-app/         # DOMAIN PORT: AI quant backtester (see backtester-app/README.md)
+│   ├── src/                # agents, 3 engines (position/pairs/contribution), robustness, AST sandbox, ui
+│   ├── baselines/          # human-verified rulers (the ground-truth "correct" answers)
+│   └── eval_suite.py       # + check_*.py — ground-truth eval harnesses
+# generated, gitignored: chroma_db/, checkpoints.sqlite, **/.env, docs/, logs/
 ```
 
 ## Setup
