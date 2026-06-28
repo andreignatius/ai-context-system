@@ -17,7 +17,7 @@ except Exception:
 import pandas as pd
 from src.graph import build_run_graph
 from src.agents import (classify, write_spec, extract_legs, _leg_label, is_multi_asset_position,
-                        resolve_pair_tickers, resolve_ticker)
+                        resolve_pair_tickers, resolve_ticker, scope_refusal)
 from src.runner import _load_strategy, _load_strategy_pair
 from src.robustness import rolling_robustness, rolling_robustness_pairs
 from src.engine import run_backtest
@@ -308,6 +308,12 @@ def process_request(req):
             st.session_state.help_query = req               # echoed as a user bubble so the prompt isn't lost
             st.session_state.draft = None
             return
+        if s.get("mode") == "out_of_scope":                 # GATE 0: can't honestly answer -> refuse + help
+            status.update(label="Out of scope", state="complete")
+            s["scope_error"] = True
+            s["scope_msg"] = scope_refusal(req)             # 4-part: boundary / decline-question / proxy / caveat
+            st.session_state.draft = s
+            return
         status.write(f"✓ understood — engine: **{s.get('mode')}**")
         s.update(write_spec(s)); status.write("✓ drafted the spec")
         if is_multi_asset_position(req, s.get("mode")):
@@ -359,9 +365,18 @@ if not draft:
 
 if draft:
     if draft.get("scope_error"):
-        st.warning("⚠️ " + draft["scope_msg"])
-        if st.button("OK"):
-            st.session_state.draft = None; st.rerun()
+        with st.chat_message("user"):
+            st.write(draft["request"])
+        with st.chat_message("assistant"):
+            st.warning(draft["scope_msg"])              # the 4-part honest refusal (boundary/proxy/caveat)
+            st.caption("What I can do: single-asset strategies (SMA / RSI / breakout), DCA comparisons, and "
+                       "pairs trades — on listed tickers. Try an example, or rephrase:")
+            cols = st.columns(2)
+            for i, t in enumerate(TEMPLATES):           # detect-and-HELP: offer concrete in-scope paths
+                if cols[i % 2].button(t["name"], key=f"scope_tpl_{i}", use_container_width=True):
+                    st.session_state.pending = t["prompt"]; st.session_state.draft = None; st.rerun()
+            if st.button("Dismiss"):
+                st.session_state.draft = None; st.rerun()
         st.stop()           # don't render the confirm panel / Run button
 
     ticker = draft.get("ticker") or "SPY"      # prompt-extracted asset (default SPY) - fully prompt-driven now

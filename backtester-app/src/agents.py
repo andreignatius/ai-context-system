@@ -181,6 +181,65 @@ def resolve_ticker(name: str) -> str:
     m = re.findall(r"[A-Z][A-Z.\-]{0,7}", reply)
     return m[0] if m else ""
 
+
+# --- FEASIBILITY GATE (gate 0 of the honesty stack) -------------------------------------------------
+# A SEPARATE call from MODE_PROMPT (Lesson 029: keep the routing decision from being degraded). Runs only
+# on non-help requests inside classify. "Can this be answered with daily close of 1-2 listed tickers?"
+SCOPE_PROMPT = (
+    "You are a feasibility gate for a quant BACKTESTER. Its ONLY data is daily CLOSE prices of listed tickers "
+    "(stocks / ETFs / major crypto), 1-2 at a time. Nothing else.\n"
+    "Decide if the request can be answered with THAT data alone. Reply EXACTLY one word: IN or OUT.\n"
+    "OUT (out of scope) if it needs ANY other data, or is not a testable price rule:\n"
+    "- fundamentals (P/E, earnings, short interest, float); credit / CDS / trade-finance spreads; factor data "
+    "(Fama-French); macro / rates; intraday; options / derivatives; VOLUME; news / sentiment; alt-data\n"
+    "- a single-asset strategy GATED on a SECOND series ('SPY only when VIX < 30')\n"
+    "- a markets RESEARCH QUESTION or explanation ('what is the transmission mechanism / lag structure?'), "
+    "not a testable rule\n"
+    "IN otherwise - ANY price-based strategy on listed tickers: SMA / RSI / breakout / momentum / mean-"
+    "reversion, single-asset OR a pairs / spread on TWO listed tickers, OR a DCA / contribution comparison.\n"
+    "When genuinely unsure, reply IN. Only reply OUT when it CLEARLY needs unavailable data or is a question.\n"
+    "Examples:\n"
+    "  '50/200 SMA crossover on SPY'                         -> IN\n"
+    "  'RSI(14) mean reversion on AAPL since 2020'           -> IN\n"
+    "  'pairs trade KO vs PEP, z-score +/-2'                 -> IN\n"
+    "  'DCA $1k monthly into SPY vs buying every 3-day dip'  -> IN\n"
+    "  'backtest using P/E ratios and short interest'        -> OUT\n"
+    "  'long SPY only when VIX < 30'                         -> OUT\n"
+    "  'buy when volume spikes 2x the 20-day average'        -> OUT\n"
+    "  'trade-finance spreads / CDS on commodity banks as a leading signal' -> OUT\n"
+    "  'explain the lead-lag between oil and airlines'       -> OUT\n"
+)
+
+def scope_check(request: str) -> bool:
+    """Feasibility gate. True = OUT of scope (needs data we lack, or is a question); False = IN scope.
+    Biased to IN when unsure - the editable spec + the ruler are downstream nets."""
+    reply = _strip_think(llm.invoke([SystemMessage(content=SCOPE_PROMPT),
+                                     HumanMessage(content=request)]).content).strip().lower()
+    out = reply.startswith("out")
+    print(f"[scope] {'OUT' if out else 'IN'}")
+    return out
+
+
+SCOPE_REFUSAL_PROMPT = (
+    "You are the scope guard for a quant BACKTESTER that has ONLY daily CLOSE prices of listed tickers "
+    "(stocks / ETFs), 1-2 at a time. The user's request is OUT OF SCOPE. Write a short, honest reply in "
+    "markdown (~4 brief bullet points), in this order:\n"
+    "1. say plainly WHAT it cannot do and WHY - name the missing data / the boundary.\n"
+    "2. if the request includes a research QUESTION, decline it explicitly - do NOT answer or guess at it.\n"
+    "3. if a sensible PRICE PROXY exists using WELL-KNOWN, liquid ETFs, propose SPECIFIC tickers and the "
+    "testable version (e.g. credit stress -> HYG or the HYG/LQD ratio; financials -> XLF / KRE; commodities "
+    "-> DBC / XLE; so a HYG-vs-DBC lead-lag or pair). If NO sensible proxy exists, say so - never invent "
+    "tickers or data sources.\n"
+    "4. CAVEAT the proxy: it is a crude price simplification that DROPS the original thesis - a null result "
+    "would not disprove it, a positive one would not confirm it.\n"
+    "End by asking if they want to try the proxy, or rephrase with listed tickers. Be concise and honest."
+)
+
+def scope_refusal(request: str) -> str:
+    """A 4-part honest refusal for an out_of_scope request: boundary + decline-question + proxy + caveat."""
+    return _strip_think(llm.invoke([SystemMessage(content=SCOPE_REFUSAL_PROMPT),
+                                    HumanMessage(content=request)]).content).strip()
+
 def classify(state):
     """M8 tool-selection + param extraction. TWO calls (one prompt, one job): mode classification
     stays separate from param extraction so the critical routing decision is not degraded (Lesson 029)."""
@@ -191,6 +250,9 @@ def classify(state):
     if "help" in ml:                      # a META / non-backtest message -> no params, no draft (UI shows welcome)
         print("[classify] mode=help")
         return {"mode": "help"}
+    if scope_check(req):                   # GATE 0: feasibility, a SEPARATE call (MODE_PROMPT untouched, Lesson 029)
+        print("[classify] mode=out_of_scope")
+        return {"mode": "out_of_scope"}
     mode = "contribution" if "contribution" in ml else "position"
 
     params_reply = _strip_think(llm.invoke([SystemMessage(content=PARAMS_PROMPT),

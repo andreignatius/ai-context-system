@@ -9,6 +9,16 @@ cases = [
      "contribution", "2021-01-01", 1000.0),
     ("how much money would I have if I DCA'd $500 a month into QQQ", "contribution", None, 500.0),
     ("invest $2k every time RSI drops below 30 since 2020, total value?", "contribution", "2020-01-01", 2000.0),
+    # IN-SCOPE, must NOT regress to out_of_scope (fancy-sounding but price-only):
+    ("pairs trade KO vs PEP with a 2 sigma z-score band", "position", None, None),
+    ("mean reversion: long AAPL when RSI(14) < 30, exit at 70", "position", None, None),
+    # HELP (meta) must stay help, not out_of_scope:
+    ("hi what can you do?", "help", None, None),
+    # OUT_OF_SCOPE (the feasibility gate, gate 0):
+    ("design a strategy on trade-finance spreads via CDS proxies on commodity banks", "out_of_scope", None, None),
+    ("backtest a strategy using P/E ratios and short interest", "out_of_scope", None, None),
+    ("long SPY only when VIX is below 30", "out_of_scope", None, None),
+    ("buy when volume spikes to 2x the 20-day average", "out_of_scope", None, None),
 ]
 
 correct = 0
