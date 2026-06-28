@@ -48,11 +48,14 @@ _STEP = {
     "judge": "🔍 checking soundness (self-healing)…",
 }
 
+st.caption("An AI quant backtester — **honest about look-ahead, costs, and out-of-sample robustness**, "
+           "not just plausible-looking code.")
 st.caption("daily close (auto-adjusted) · yfinance · **prompt-driven** (name the ticker in your request, "
            "e.g. \"backtest IWM…\" or \"GOOG vs SPY\") · equity = growth of $1, fully invested when long")
 
 st.session_state.setdefault("history", [])
 st.session_state.setdefault("draft", None)   # pending interpretation awaiting confirm/fix
+st.session_state.setdefault("show_help", False)   # show the welcome (first run, or a 'what can you do' query)
 
 
 def _robustness_ui(uid, key, compute, has_bh):
@@ -236,6 +239,65 @@ def render(b, uid=""):                  # uid keeps widget IDs unique across rep
         st.warning(b["run_result"]["failures"])
 
 
+TEMPLATES = [
+    {"name": "📈 Trend following", "prompt": "Long SPY when the 50-day SMA is above the 200-day SMA, since 2020"},
+    {"name": "📊 Mean reversion",  "prompt": "Go long SPY when RSI(14) is below 30 and exit when above 70, since 2020"},
+    {"name": "💵 DCA comparison",  "prompt": "Compare investing $1000 in SPY on every 3-day dip vs $1000 monthly DCA, since 2021"},
+    {"name": "🔗 Pairs trade",     "prompt": "Pairs trade XLF vs XLI: long the weaker when the spread widens to +2 SD, since 2019"},
+]
+
+
+def show_welcome():
+    """First-run / 'what can you do' welcome: value framing + one-click example templates."""
+    with st.chat_message("assistant"):
+        st.markdown("👋 **An AI quant backtester** — describe a strategy or a money question in plain English, "
+                    "and I'll write it, run it point-in-time (no look-ahead), grade it against a known-correct "
+                    "baseline, and let you stress-test it out-of-sample. Try an example:")
+        cols = st.columns(2)
+        for i, t in enumerate(TEMPLATES):
+            if cols[i % 2].button(t["name"], key=f"tpl_{i}", use_container_width=True):
+                st.session_state.pending = t["prompt"]      # routed through the SAME pipeline as typing
+                st.rerun()
+        st.caption("I handle single-asset strategies (SMA / RSI / breakout), DCA comparisons, and pairs trades.")
+
+
+def process_request(req):
+    """Read a request -> a confirmable DRAFT. The SAME path for typed prompts AND template clicks. A META
+    message (classify -> 'help') shows the welcome instead of forcing it into a strategy."""
+    st.session_state.show_help = False
+    s = {"request": req}
+    with st.status("Reading your request…", expanded=True) as status:
+        s.update(classify(s))
+        if s.get("mode") == "help":                         # not a backtest request -> welcome, no draft
+            status.update(label="Here's what I can do 👇", state="complete")
+            st.session_state.show_help = True
+            st.session_state.draft = None
+            return
+        status.write(f"✓ understood — engine: **{s.get('mode')}**")
+        s.update(write_spec(s)); status.write("✓ drafted the spec")
+        if is_multi_asset_position(req, s.get("mode")):
+            tks = extract_pair_tickers(req)
+            if len(tks) == 2:
+                s["mode"] = "pairs"
+                s["ticker"], s["ticker_b"] = tks[0], tks[1]
+                status.write(f"✓ pairs: **{tks[0]} vs {tks[1]}**")
+            else:
+                s["scope_error"] = True
+                s["scope_msg"] = ("Pairs / multi-asset strategies aren't supported yet — this engine runs a "
+                                  "single-asset strategy. Try a single ticker, or a contribution comparison "
+                                  "for two assets (e.g. \"GOOG vs SPY monthly\").")
+        elif s.get("mode") == "contribution":
+            s.update(extract_legs(s)); status.write("✓ parsed the legs")
+        status.update(label="Ready ✓", state="complete")
+    st.session_state.draft = s
+
+
+# a template click sets `pending` -> process it through the same pipeline as a typed prompt
+if st.session_state.get("pending"):
+    process_request(st.session_state.pop("pending"))
+    st.rerun()
+
+
 # replay the conversation
 for i, turn in enumerate(st.session_state.history):
     with st.chat_message(turn["role"]):
@@ -246,6 +308,10 @@ for i, turn in enumerate(st.session_state.history):
 
 # --- confirm flow: a pending DRAFT (the interpretation) the user approves or corrects BEFORE running ---
 draft = st.session_state.get("draft")
+
+# welcome screen: first visit (no history, no draft) OR an explicit 'what can you do' query
+if not draft and (st.session_state.get("show_help") or not st.session_state.history):
+    show_welcome()
 
 if draft:
     if draft.get("scope_error"):
@@ -336,32 +402,7 @@ if draft:
         st.session_state.draft = None
         st.rerun()
 
-# chat input -> DRAFT (read the request + show the interpretation; wait for confirm)
-if req := st.chat_input("Describe a strategy, or a money question…"):
-    s = {"request": req}
-    # with st.spinner("reading your request…"):
-    #     s.update(classify(s))                 # mode, start_date, amount (extracted)
-    #     s.update(write_spec(s))               # the interpreted spec
-    #     if s.get("mode") == "contribution":   # prefill the two leg controls (UI-only; eval path untouched)
-    #         s.update(extract_legs(s))
-    with st.status("Reading your request…", expanded=True) as status:
-        s.update(classify(s));   status.write(f"✓ understood — engine: **{s.get('mode')}**")
-        s.update(write_spec(s)); status.write("✓ drafted the spec")
-
-        if is_multi_asset_position(req, s.get("mode")):
-            tks = extract_pair_tickers(req)
-            if len(tks) == 2:                              # exactly two tickers -> PAIRS route
-                s["mode"] = "pairs"
-                s["ticker"], s["ticker_b"] = tks[0], tks[1]
-                status.write(f"✓ pairs: **{tks[0]} vs {tks[1]}**")
-            else:                                          # 0/1 or >2 tickers -> not a clean pair, refuse
-                s["scope_error"] = True
-                s["scope_msg"] = ("Pairs / multi-asset strategies aren't supported yet — this engine runs a "
-                                "single-asset strategy. Try a single ticker, or a contribution comparison "
-                                "for two assets (e.g. \"GOOG vs SPY monthly\").")
-        elif s.get("mode") == "contribution":
-            s.update(extract_legs(s)); status.write("✓ parsed the legs")
-        status.update(label="Ready ✓", state="complete")
-
-    st.session_state.draft = s
+# chat input -> the SAME pipeline as a template click (classify -> draft, or 'help' -> welcome)
+if req := st.chat_input("Describe a strategy, a money question, or ask 'what can you do?'…"):
+    process_request(req)
     st.rerun()

@@ -11,14 +11,19 @@ _NOT_TICKERS = {"RSI","SMA","EMA","MACD","DCA","ETF","USD","AND","THE","SD","ATR
 # ONE PROMPT, ONE JOB: mode classification kept separate from param extraction (combining the two
 # degraded mode accuracy - the critical routing decision). See Lesson 029.
 MODE_PROMPT = (
-    "You route a quant request to the right engine. Reply EXACTLY one word: position OR contribution.\n"
+    "You route a request to the right engine. Reply EXACTLY one word: position OR contribution OR help.\n"
     "- position : the user wants a trading STRATEGY's performance (return / Sharpe / drawdown), EVEN IF they "
     "mention STARTING CAPITAL in dollars ('start with $10k', 'trade 100% of equity each signal').\n"
     "- contribution : money DEPOSITED REPEATEDLY over time - DCA, '$X every week/month', 'deposit $X on each "
     "dip', comparing two DCA schedules, 'how much money would I have'.\n"
+    "- help : the message is NOT a backtest request - a greeting, a question ABOUT the app, 'what can you do', "
+    "or anything off-topic.\n"
     "KEY TEST: a dollar amount tied to a CADENCE or a repeated event ('$1k monthly', '$250 weekly', '$1k on "
-    "each dip') = CONTRIBUTION. A one-time STARTING CAPITAL ('start with $X', 'trade equity') = POSITION.\n"
+    "each dip') = CONTRIBUTION. A one-time STARTING CAPITAL ('start with $X', 'trade equity') = POSITION. A "
+    "message that describes NO strategy or comparison at all = HELP.\n"
     "Examples:\n"
+    "  'what can you do?'                                   -> help\n"
+    "  'hi' / 'how does this work?'                         -> help\n"
     "  'long SPY when RSI<30, start with $10k'              -> position\n"
     "  '50/200 SMA crossover on SPY'                        -> position\n"
     "  'DCA $1k monthly into SPY'                           -> contribution\n"
@@ -144,7 +149,11 @@ def classify(state):
     req = state["request"]
     mode_reply = _strip_think(llm.invoke([SystemMessage(content=MODE_PROMPT),
                                           HumanMessage(content=req)]).content)
-    mode = "contribution" if "contribution" in mode_reply.lower() else "position"
+    ml = mode_reply.lower()
+    if "help" in ml:                      # a META / non-backtest message -> no params, no draft (UI shows welcome)
+        print("[classify] mode=help")
+        return {"mode": "help"}
+    mode = "contribution" if "contribution" in ml else "position"
 
     params_reply = _strip_think(llm.invoke([SystemMessage(content=PARAMS_PROMPT),
                                             HumanMessage(content=req)]).content)
