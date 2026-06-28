@@ -247,18 +247,40 @@ TEMPLATES = [
 ]
 
 
-def show_welcome():
-    """First-run / 'what can you do' welcome: value framing + one-click example templates."""
+def show_welcome(rich=False):
+    """The intro + one-click example templates. Two flavours so the two entry points feel different:
+    - rich=False (FIRST visit): a short greeting -- don't wall-of-text a brand-new visitor.
+    - rich=True ('what can you do?'): a fuller, expressive answer (the honesty stack + the 3 request kinds),
+      so asking actually produces something NEW rather than re-showing the same banner."""
     with st.chat_message("assistant"):
-        st.markdown("👋 **An AI quant backtester** — describe a strategy or a money question in plain English, "
-                    "and I'll write it, run it point-in-time (no look-ahead), grade it against a known-correct "
-                    "baseline, and let you stress-test it out-of-sample. Try an example:")
+        if rich:
+            st.markdown(
+                "Here's what I do — I turn a plain-English strategy or money question into a **real, graded "
+                "backtest**, and I'm honest about the three ways backtests usually lie:\n\n"
+                "- 📝 **Write & run it** — I write the strategy code and run it *point-in-time* (each bar sees only "
+                "the past), so look-ahead bias is **structurally impossible**, not just avoided.\n"
+                "- 📏 **Grade it honestly** — every run is checked against a **known-correct baseline** (a "
+                "ground-truth ruler), so plausible-but-wrong code gets caught instead of trusted.\n"
+                "- 🌍 **Stress-test it** — roll it across **out-of-sample** windows to see if it *generalizes* or is "
+                "just curve-fit (\"positive in 4/12 windows, beats buy & hold in 3 — looks like beta, not alpha\").\n\n"
+                "**Three kinds of request I handle:**\n"
+                "- **Single-asset strategies** — SMA / RSI / breakout (e.g. *\"long SPY when the 50-day SMA is above "
+                "the 200-day\"*)\n"
+                "- **DCA comparisons** — dollar-cost-averaging questions (e.g. *\"$1000/mo into SPY vs buying every "
+                "3-day dip\"*)\n"
+                "- **Pairs trades** — market-neutral spreads (e.g. *\"XLF vs XLI when the spread hits +2 SD\"*)\n\n"
+                "Try one 👇")
+        else:
+            st.markdown("👋 **An AI quant backtester** — describe a strategy or a money question in plain English, "
+                        "and I'll write it, run it point-in-time (no look-ahead), grade it against a known-correct "
+                        "baseline, and let you stress-test it out-of-sample. Try an example:")
         cols = st.columns(2)
         for i, t in enumerate(TEMPLATES):
             if cols[i % 2].button(t["name"], key=f"tpl_{i}", use_container_width=True):
                 st.session_state.pending = t["prompt"]      # routed through the SAME pipeline as typing
                 st.rerun()
-        st.caption("I handle single-asset strategies (SMA / RSI / breakout), DCA comparisons, and pairs trades.")
+        if not rich:
+            st.caption("I handle single-asset strategies (SMA / RSI / breakout), DCA comparisons, and pairs trades.")
 
 
 def process_request(req):
@@ -271,6 +293,7 @@ def process_request(req):
         if s.get("mode") == "help":                         # not a backtest request -> welcome, no draft
             status.update(label="Here's what I can do 👇", state="complete")
             st.session_state.show_help = True
+            st.session_state.help_query = req               # echoed as a user bubble so the prompt isn't lost
             st.session_state.draft = None
             return
         status.write(f"✓ understood — engine: **{s.get('mode')}**")
@@ -292,9 +315,16 @@ def process_request(req):
     st.session_state.draft = s
 
 
+# INPUT IS HANDLED FIRST (before any rendering): a submit must process + rerun BEFORE we draw the
+# welcome, or st.rerun() fires mid-run after keyed widgets already streamed -> blank next render.
 # a template click sets `pending` -> process it through the same pipeline as a typed prompt
 if st.session_state.get("pending"):
     process_request(st.session_state.pop("pending"))
+    st.rerun()
+
+# chat input (the widget still pins to the bottom of the page wherever it's called) -> same pipeline
+if req := st.chat_input("Describe a strategy, a money question, or ask 'what can you do?'…"):
+    process_request(req)
     st.rerun()
 
 
@@ -309,9 +339,16 @@ for i, turn in enumerate(st.session_state.history):
 # --- confirm flow: a pending DRAFT (the interpretation) the user approves or corrects BEFORE running ---
 draft = st.session_state.get("draft")
 
-# welcome screen: first visit (no history, no draft) OR an explicit 'what can you do' query
-if not draft and (st.session_state.get("show_help") or not st.session_state.history):
-    show_welcome()
+# welcome screen, two entry points:
+#  - 'what can you do?' (show_help): echo the question + the RICH answer, so asking produces something new
+#  - first visit (empty history): the short greeting, to fix blank-box paralysis
+if not draft:
+    if st.session_state.get("show_help"):
+        with st.chat_message("user"):
+            st.write(st.session_state.get("help_query", "what can you do?"))
+        show_welcome(rich=True)
+    elif not st.session_state.history:
+        show_welcome(rich=False)
 
 if draft:
     if draft.get("scope_error"):
@@ -402,7 +439,4 @@ if draft:
         st.session_state.draft = None
         st.rerun()
 
-# chat input -> the SAME pipeline as a template click (classify -> draft, or 'help' -> welcome)
-if req := st.chat_input("Describe a strategy, a money question, or ask 'what can you do?'…"):
-    process_request(req)
-    st.rerun()
+# (chat input is handled at the TOP of the script, before any rendering -- see the input block above)
