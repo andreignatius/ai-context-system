@@ -120,7 +120,8 @@ def render(b, uid=""):                  # uid keeps widget IDs unique across rep
             c[1].metric("CAGR", f"{m['ann_return']:+.1%}")
             c[2].metric("Sharpe", f"{m['sharpe']:.2f}")
             c[3].metric("Max drawdown", f"{m['max_drawdown']:.1%}")
-            st.caption(f"{m['n_trades']} trades")
+            st.caption(f"{m['n_trades']} trades  ·  **net of ~5 bps/side** (~10 bps round-trip) — costs scale "
+                       "with turnover, so this no longer flatters churn")
             if pr.get("equity_curve") is not None:
                 st.line_chart(pr["equity_curve"].rename("spread equity (growth of $1)"))
             with st.expander("📄 full pairs script (reproducible end-to-end)"):
@@ -209,7 +210,8 @@ def render(b, uid=""):                  # uid keeps widget IDs unique across rep
         c[3].metric("Max drawdown", f"{m['max_drawdown']:.1%}")
         if eq is not None:
             c[4].metric("Longest DD", f"{longest_drawdown_days(eq)}d")
-        st.caption(f"{m['n_trades']} trades")
+        st.caption(f"{m['n_trades']} trades  ·  **net of ~5 bps/side** (~10 bps round-trip) — costs scale "
+                   "with turnover, so this no longer flatters churn")
 
     # benchmark overlay: strategy vs buy-and-hold (same $1 lump-sum basis -> directly comparable)
     if eq is not None and px is not None:

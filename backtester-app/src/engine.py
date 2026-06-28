@@ -9,6 +9,11 @@ from dataclasses import dataclass
 import numpy as np
 import pandas as pd
 
+# Default transaction cost: ~5 bps per unit turnover (~10 bps per round-trip) - commissions + slippage for
+# liquid ETFs. Applied as fee * |delta position|, so a frictionless gross result no longer flatters churn
+# (Lesson 035: a 412-trade strategy can't masquerade as a 7-trade one). Override per-call with fee=...
+DEFAULT_FEE = 0.0005
+
 
 @dataclass
 class BacktestResult:
@@ -21,7 +26,7 @@ class BacktestResult:
     n_trades: int
 
 
-def run_backtest(prices, strategy, fee=0.0, periods_per_year=252) -> BacktestResult:
+def run_backtest(prices, strategy, fee=DEFAULT_FEE, periods_per_year=252) -> BacktestResult:
     # 1. point-in-time: strategy sees ONLY prices up to and including bar t
     targets = [strategy(prices.iloc[: t + 1]) for t in range(len(prices))]
     targets = pd.Series(targets, index=prices.index, dtype=float)

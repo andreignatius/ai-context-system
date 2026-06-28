@@ -35,8 +35,10 @@ def evaluate(request, reference, tol_ret=0.02, tol_sharpe=0.15):
     result = app.invoke({"request": request})
     if result["status"] != "ok":                      # didn't even pass soundness
         return {"verdict": "UNSOUND", "detail": result["run_result"]["failures"]}
-    ai = run_backtest(PRICES, _load_strategy(result["strategy_code"]))
-    ref = run_backtest(PRICES, reference)
+    # the ruler grades LOGIC (does the code match the documented rule), not costs -> run both GROSS (fee=0)
+    # so the comparison is exact; transaction cost is a separate honesty gate applied to the user-facing run.
+    ai = run_backtest(PRICES, _load_strategy(result["strategy_code"]), fee=0.0)
+    ref = run_backtest(PRICES, reference, fee=0.0)
     dt, ds = abs(ai.total_return - ref.total_return), abs(ai.sharpe - ref.sharpe)
     correct = dt < tol_ret and ds < tol_sharpe
     return {"verdict": "CORRECT" if correct else "SOUND-BUT-WRONG",

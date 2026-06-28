@@ -29,7 +29,7 @@ __STRATEGY_CODE__
 
 
 # === 3. ENGINE: point-in-time loop + 1-bar lag (look-ahead is structurally impossible) ===
-def run_backtest(prices, strategy, fee=0.0, periods_per_year=252):
+def run_backtest(prices, strategy, fee=0.0005, periods_per_year=252):   # fee=~5bps/side -> NET of cost
     targets = pd.Series([strategy(prices.iloc[: t + 1]) for t in range(len(prices))],
                         index=prices.index, dtype=float)
     position = targets.shift(1).fillna(0.0)       # act on YESTERDAY's signal -> no same-bar fill

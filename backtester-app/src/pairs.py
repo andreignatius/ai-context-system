@@ -12,6 +12,8 @@ from dataclasses import dataclass
 import numpy as np
 import pandas as pd
 
+from .engine import DEFAULT_FEE        # one source of truth for the transaction-cost default
+
 
 @dataclass
 class PairsResult:
@@ -23,7 +25,7 @@ class PairsResult:
     n_trades: int
 
 
-def run_pairs_backtest(prices_a, prices_b, strategy_pair, fee=0.0, periods_per_year=252) -> PairsResult:
+def run_pairs_backtest(prices_a, prices_b, strategy_pair, fee=DEFAULT_FEE, periods_per_year=252) -> PairsResult:
     idx = prices_a.index.intersection(prices_b.index)        # common window (alignment)
     a, b = prices_a.reindex(idx), prices_b.reindex(idx)
 
