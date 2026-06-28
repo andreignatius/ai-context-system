@@ -143,6 +143,26 @@ def extract_pair_tickers(request: str) -> list:
             seen.append(t)
     return seen
 
+
+PAIR_TICKERS_PROMPT = """You map a pairs-trading request to the TWO Yahoo Finance ticker symbols it names.
+Map company NAMES to symbols: Exxon Mobil -> XOM, Shell -> SHEL, Apple -> AAPL, Coca-Cola -> KO.
+If an asset is already a symbol, keep it as-is.
+Reply with EXACTLY two uppercase symbols separated by a comma (e.g. "XOM, SHEL"), nothing else.
+If you cannot identify two distinct assets, reply "NONE"."""
+
+def resolve_pair_tickers(request: str) -> list:
+    """The two pair tickers. Cheap regex first (already-symbols); fall back to the LLM to map NAMES -> symbols."""
+    syms = extract_pair_tickers(request)
+    if len(syms) >= 2:
+        return syms[:2]
+    reply = _strip_think(llm.invoke([SystemMessage(content=PAIR_TICKERS_PROMPT),
+                                     HumanMessage(content=request)]).content).strip().upper()
+    if "NONE" in reply:
+        return []
+    skip = _NOT_TICKERS | {"VS", "OR"}                  # drop connectives the model may leak ("XOM and SHEL")
+    toks = [t for t in re.split(r"[^A-Z.\-]+", reply) if any(c.isalpha() for c in t) and t not in skip]
+    return toks[:2] if len(toks) >= 2 else []
+
 def classify(state):
     """M8 tool-selection + param extraction. TWO calls (one prompt, one job): mode classification
     stays separate from param extraction so the critical routing decision is not degraded (Lesson 029)."""

@@ -16,7 +16,7 @@ except Exception:
 
 import pandas as pd
 from src.graph import build_run_graph
-from src.agents import classify, write_spec, extract_legs, _leg_label, is_multi_asset_position, extract_pair_tickers
+from src.agents import classify, write_spec, extract_legs, _leg_label, is_multi_asset_position, resolve_pair_tickers
 from src.runner import _load_strategy, _load_strategy_pair
 from src.robustness import rolling_robustness, rolling_robustness_pairs
 from src.engine import run_backtest
@@ -38,6 +38,15 @@ def _handler():                       # Langfuse tracer (no-op if LANGFUSE_* sec
 @st.cache_data
 def _prices(ticker, period, start):
     return load_prices(ticker, period, start)
+
+def _ticker_ok(t, start):
+    """True if a ticker actually loads data (cached) - validates pairs BEFORE the coder runs."""
+    if not t:
+        return False
+    try:
+        return len(_prices(t, "5y", start)) > 0
+    except Exception:
+        return False
 
 # friendly labels for live progress - the graph emits one event per node as it finishes
 _STEP = {
@@ -299,16 +308,11 @@ def process_request(req):
         status.write(f"✓ understood — engine: **{s.get('mode')}**")
         s.update(write_spec(s)); status.write("✓ drafted the spec")
         if is_multi_asset_position(req, s.get("mode")):
-            tks = extract_pair_tickers(req)
-            if len(tks) == 2:
-                s["mode"] = "pairs"
-                s["ticker"], s["ticker_b"] = tks[0], tks[1]
-                status.write(f"✓ pairs: **{tks[0]} vs {tks[1]}**")
-            else:
-                s["scope_error"] = True
-                s["scope_msg"] = ("Pairs / multi-asset strategies aren't supported yet — this engine runs a "
-                                  "single-asset strategy. Try a single ticker, or a contribution comparison "
-                                  "for two assets (e.g. \"GOOG vs SPY monthly\").")
+            tks = resolve_pair_tickers(req)             # maps NAMES -> symbols (Exxon Mobil -> XOM); [] if unsure
+            s["mode"] = "pairs"
+            s["ticker"]   = tks[0] if len(tks) >= 1 else ""
+            s["ticker_b"] = tks[1] if len(tks) >= 2 else ""
+            status.write(f"✓ pairs: **{s['ticker'] or '?'} vs {s['ticker_b'] or '?'}**  (confirm below)")
         elif s.get("mode") == "contribution":
             s.update(extract_legs(s)); status.write("✓ parsed the legs")
         status.update(label="Ready ✓", state="complete")
@@ -371,6 +375,7 @@ if draft:
         # CONTRIBUTION: two editable legs (cadence + own amount) -> "weekly $250 vs monthly $1000".
         # Direct user control (c2 philosophy); prefilled by extract_legs, but the user has final say.
         leg_inputs = None
+        pair_a = pair_b = None
         if draft.get("mode") == "contribution":
             st.markdown("**Compare two deposit schedules** — set each leg's ticker, cadence, and amount "
                         "(different tickers = a cross-asset comparison, e.g. GOOG vs SPY):")
@@ -392,6 +397,12 @@ if draft:
             if any(l["cadence"] == "signal" for l in leg_inputs):
                 st.caption("A **signal** leg deposits when the strategy fires — edit the spec below. "
                            "(Signal cadence runs on a single asset; cross-asset uses weekly/monthly.)")
+        elif draft.get("mode") == "pairs":
+            st.markdown("**Pair** — confirm or correct the two tickers "
+                        "(Yahoo symbols, e.g. **XOM** = Exxon Mobil, **SHEL** = Shell):")
+            pca, pcb = st.columns(2)
+            pair_a = pca.text_input("Ticker A", value=draft.get("ticker") or "", key="pair_a").strip().upper()
+            pair_b = pcb.text_input("Ticker B", value=draft.get("ticker_b") or "", key="pair_b").strip().upper()
         else:
             st.caption(f"${draft.get('amount', 1000):,.0f} per deposit")
 
@@ -408,13 +419,24 @@ if draft:
     # pre-check: identical legs = an asset-vs-itself comparison -> refuse instantly (no wasted coder call).
     # identity includes the TICKER, so GOOG-vs-SPY is NOT identical. keeps the draft so the user can adjust.
     identical_legs = bool(leg_inputs) and len({(l["ticker"], l["cadence"], l["amount"]) for l in leg_inputs}) == 1
+    # pairs: the editable fields OVERRIDE the extracted tickers; validate BOTH load before the (costly) coder run
+    pair_bad = None
+    if draft.get("mode") == "pairs":
+        ticker = pair_a or ""                                  # Ticker A drives the single-load `prices`
+        pair_bad = [t or "(blank)" for t in (pair_a, pair_b) if not _ticker_ok(t, draft.get("start_date"))]
+
     if run_clicked and identical_legs:
         st.error("⚠️ Both legs are identical (same ticker + cadence + amount) — that compares the asset to "
                  "itself. Change a ticker, cadence, or amount to make a real comparison.")
+    elif run_clicked and pair_bad:
+        st.error("⚠️ Couldn't load price data for: **" + "**, **".join(pair_bad) + "**. "
+                 "Use Yahoo Finance symbols (Exxon Mobil = **XOM**, Shell = **SHEL**, S&P 500 = **SPY**).")
     elif run_clicked:
         prices = _prices(ticker, period, draft.get("start_date") or start)
         state = {**draft, "spec": edited_spec, "prices": prices, "ticker": ticker, "period": period,
                  "fix_target": "", "feedback": ""}         # the EDITED spec is what the coder builds from
+        if draft.get("mode") == "pairs":
+            state["ticker_b"] = pair_b                         # the edited Ticker B into the engine
         if leg_inputs:                                     # user-confirmed legs -> per-leg ticker+cadence+amount
             state["legs"] = [{"ticker": l["ticker"], "cadence": l["cadence"], "amount": l["amount"],
                               "label": _leg_label(l["cadence"], l["amount"], l["ticker"])} for l in leg_inputs]
