@@ -163,6 +163,24 @@ def resolve_pair_tickers(request: str) -> list:
     toks = [t for t in re.split(r"[^A-Z.\-]+", reply) if any(c.isalpha() for c in t) and t not in skip]
     return toks[:2] if len(toks) >= 2 else []
 
+
+TICKER_PROMPT = """Return the Yahoo Finance ticker symbol for the asset named below.
+Examples: Exxon Mobil -> XOM, Shell -> SHEL, Apple -> AAPL, S&P 500 -> SPY, Bitcoin -> BTC-USD.
+Reply with ONLY the uppercase symbol, nothing else. If unsure, reply NONE."""
+
+def resolve_ticker(name: str) -> str:
+    """A single asset NAME -> its Yahoo Finance symbol (LLM); '' if unsure. Caller MUST validate it loads
+    (an LLM lookup can hallucinate a plausible-but-wrong symbol)."""
+    name = (name or "").strip()
+    if not name:
+        return ""
+    reply = _strip_think(llm.invoke([SystemMessage(content=TICKER_PROMPT),
+                                     HumanMessage(content=name)]).content).strip().upper()
+    if "NONE" in reply:
+        return ""
+    m = re.findall(r"[A-Z][A-Z.\-]{0,7}", reply)
+    return m[0] if m else ""
+
 def classify(state):
     """M8 tool-selection + param extraction. TWO calls (one prompt, one job): mode classification
     stays separate from param extraction so the critical routing decision is not degraded (Lesson 029)."""

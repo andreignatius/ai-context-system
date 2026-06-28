@@ -16,7 +16,8 @@ except Exception:
 
 import pandas as pd
 from src.graph import build_run_graph
-from src.agents import classify, write_spec, extract_legs, _leg_label, is_multi_asset_position, resolve_pair_tickers
+from src.agents import (classify, write_spec, extract_legs, _leg_label, is_multi_asset_position,
+                        resolve_pair_tickers, resolve_ticker)
 from src.runner import _load_strategy, _load_strategy_pair
 from src.robustness import rolling_robustness, rolling_robustness_pairs
 from src.engine import run_backtest
@@ -429,8 +430,21 @@ if draft:
         st.error("⚠️ Both legs are identical (same ticker + cadence + amount) — that compares the asset to "
                  "itself. Change a ticker, cadence, or amount to make a real comparison.")
     elif run_clicked and pair_bad:
-        st.error("⚠️ Couldn't load price data for: **" + "**, **".join(pair_bad) + "**. "
-                 "Use Yahoo Finance symbols (Exxon Mobil = **XOM**, Shell = **SHEL**, S&P 500 = **SPY**).")
+        # v1 name-help: map each bad entry NAME -> a symbol that actually loads, and SUGGEST it (resolve ->
+        # validate -> show; never auto-swap, since an LLM lookup can hallucinate a plausible-but-wrong symbol)
+        hits = []
+        for typed in (pair_a, pair_b):
+            if typed and not _ticker_ok(typed, draft.get("start_date")):
+                sym = resolve_ticker(typed)
+                if sym and _ticker_ok(sym, draft.get("start_date")):
+                    hits.append((typed, sym))
+        if hits:
+            sugg = "  ·  ".join(f"**{typed}** -> **{sym}**" for typed, sym in hits)
+            st.error(f"⚠️ Those don't look like Yahoo symbols. Did you mean:  {sugg}  —  "
+                     "type the symbol(s) above, then Run.")
+        else:
+            st.error("⚠️ Couldn't load price data for: **" + "**, **".join(pair_bad) + "**. "
+                     "Use Yahoo Finance symbols (Exxon Mobil = **XOM**, Shell = **SHEL**, S&P 500 = **SPY**).")
     elif run_clicked:
         prices = _prices(ticker, period, draft.get("start_date") or start)
         state = {**draft, "spec": edited_spec, "prices": prices, "ticker": ticker, "period": period,
