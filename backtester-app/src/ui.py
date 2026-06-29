@@ -106,7 +106,12 @@ def render(b, uid=""):                  # uid keeps widget IDs unique across rep
             st.text(b.get("spec", ""))
         return
     if b["status"] == "ok":
-        st.success("✅ sound — the strategy runs and is valid")
+        st.success("✅ sound — the strategy runs point-in-time and is valid")
+        # honest disclosure: live requests are SOUND-checked, never CORRECTNESS-graded (the ground-truth
+        # ruler only covers the offline eval suite). Don't let "sound" overstate trust on a novel strategy.
+        st.caption("**Sound, not verified-correct** — this ran and didn't peek at the future, but the logic "
+                   "was **not** graded against a known-correct baseline. Skim the strategy code below before "
+                   "trusting the numbers.")
     else:
         st.error("❌ stuck — the judge gave up after retries")
 
@@ -421,8 +426,7 @@ if draft:
             pca, pcb = st.columns(2)
             pair_a = pca.text_input("Ticker A", value=draft.get("ticker") or "", key="pair_a").strip().upper()
             pair_b = pcb.text_input("Ticker B", value=draft.get("ticker_b") or "", key="pair_b").strip().upper()
-        else:
-            st.caption(f"${draft.get('amount', 1000):,.0f} per deposit")
+        # (position mode: no per-deposit line - it's growth-of-$1, fully invested when long; shown in the header)
 
         # the spec/strategy is only used by a 'signal' leg. For a calendar-only DCA comparison there is no
         # strategy, so hide the (irrelevant, often misframed) spec box rather than confuse the user with it.

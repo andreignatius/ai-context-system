@@ -58,6 +58,40 @@ request ─▶ classify ─▶ write spec ─▶ [confirm + edit spec]  ◀─ h
 
 ---
 
+## Evaluation & results
+
+Two tiers of eval — *deterministic* (the plumbing) and *probabilistic* (the AI):
+
+**Deterministic** (no LLM, exact): the engine, contribution engine, and runner are ground-truthed against hand-computed answers — e.g. buy-and-hold must track the normalized price to **0.00000**. This proves the *verifier itself* is trustworthy before it grades anything.
+
+**Probabilistic** (LLM, pass-rate over N runs): agents graded against **human-verified baselines** — the "ruler." Grading is by **target-series agreement** vs a documented point-in-time rule (bar-by-bar), *not* outcome metrics — so it catches an off-by-one a return-only check would miss. Verdicts: `CORRECT / NEAR (review) / BROKEN / UNSOUND / MISROUTED`.
+
+### Model-ceiling experiment
+The model is a clean variable (swap `DEEPINFRA_MODEL`, same baselines + data). 3 models × the suite, N=3:
+
+| Strategy | qwen-7B (local) | **Qwen-32B (deployed)** | DeepSeek-V3 (frontier) |
+|---|:---:|:---:|:---:|
+| SMA 50/200 regime | ✅ 3/3 | ✅ 3/3 | ✅ 3/3 |
+| 20-day breakout *(off-by-one causality)* | ❌ 0/3 | ✅ 3/3 | ✅ 3/3 |
+| RSI-14 *(any valid variant)* | ❌ broken | ✅ 3/3 | ✅ 3/3 |
+| RSI-14 *(Wilder-pinned — spec-following)* | — | — | ⚠️ ~50% (high variance) |
+
+**Findings:**
+1. **There's a capability *threshold* between 7B and 32B** — above it, both the code-specialist (32B) *and* the frontier reasoner (V3) respect "prior 20 days *excluding* today"; the 7B fires 15% vs the baseline's 23%. It's a threshold, not a reasoning-vs-coding axis (running the 3rd column *falsified* the initial 2-column hypothesis).
+2. **32B already matches V3 — at ~¼ the cost.** Qwen-32B ≈ \$0.66/1M tokens ≈ **~\$0.01/build**; DeepSeek-V3 ≈ **~4× the cost** for *zero* measured gain on this suite → the app is deployed on **32B**.
+3. **RSI divergence was a *spec* flaw, not a model gap.** All three capable models independently chose simple-average RSI (Cutler's) over the Wilder baseline → identical ~81% divergence. The fix was the *ruler/spec* (pin the variant or accept both), not the model. No model can resolve an underspecified spec — itself a finding about spec fidelity.
+
+### Reproduce
+Run from the `backtester-app/` root as modules (see [`evals/`](evals/README.md) for the full layout):
+```bash
+DEEPINFRA_MODEL=Qwen/Qwen2.5-Coder-32B-Instruct LLM_PROVIDER=deepinfra python -m evals.probabilistic.eval_suite
+DEEPINFRA_MODEL=deepseek-ai/DeepSeek-V3         LLM_PROVIDER=deepinfra python -m evals.probabilistic.eval_suite
+python -m evals.probabilistic.eval_suite     # local 7B
+```
+*(Numbers as of 27-Jun-2026; cost figures are DeepInfra list-price estimates.)*
+
+---
+
 ## Run locally
 
 ```bash
@@ -67,12 +101,12 @@ pip install -r requirements.txt
 # uses DeepInfra (set DEEPINFRA_API_KEY in .env) or local Ollama
 LLM_PROVIDER=deepinfra streamlit run src/ui.py     # or omit the prefix for local Ollama
 
-# ground-truth evals (the "ruler" in action; needs network for market data)
-python eval_suite.py
-python check_contribution_eval.py
+# ground-truth evals (run as modules from this dir — see evals/README.md)
+python -m evals.deterministic.check_engine          # instant, no LLM/network
+python -m evals.probabilistic.eval_suite            # the "ruler" + model-ceiling experiment
 ```
 
-Put `LANGFUSE_*` keys in `.env` to trace every run. The engine, baselines, and evals have no LLM dependency — only the agents do.
+Put `LANGFUSE_*` keys in `.env` to trace every run. The engine, baselines, and `deterministic/` evals have no LLM dependency — only the agents do.
 
 ---
 
@@ -90,9 +124,11 @@ backtester-app/
 │   ├── robustness.py    # rolling out-of-sample windows (+ per-window benchmark)
 │   ├── runner.py        # AST sandbox + strategy loader
 │   ├── graph.py         # the LangGraph wiring (dispatch + self-healing loop)
-│   ├── evals.py         # ground-truth grading (the "ruler") — runs GROSS by design
+│   ├── evals.py         # position-mode ruler (python -m src.evals) — runs GROSS by design
 │   └── ui.py            # Streamlit chat, confirm flow, results
 ├── baselines/           # human-verified reference implementations (the rulers)
-├── check_*.py           # ground-truth eval harnesses per flow
-└── eval_suite.py        # the suite runner
+├── evals/               # see evals/README.md
+│   ├── deterministic/   #   plumbing checks — engine / contributions / runner (no LLM)
+│   └── probabilistic/   #   AI rulers — classify / judge / contribution-eval / eval_suite (pass-rate)
+└── demos/               # demo_*.py — quick "does the whole thing produce sane output"
 ```

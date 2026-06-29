@@ -15,9 +15,10 @@ are valid "RSI"); the agent is graded against the CLOSEST. Verdicts:
 This separates "correct-but-different-definition" from "broken" (2a) and stops penalizing valid RSI variants
 (2b). It deliberately does NOT auto-label "variant" vs "subtle bug" - that needs a human/judge; NEAR flags it.
 
-Run:  LLM_PROVIDER=deepinfra DEEPINFRA_MODEL=deepseek-ai/DeepSeek-V3 python eval_suite.py
-      LLM_PROVIDER=deepinfra DEEPINFRA_MODEL=Qwen/Qwen2.5-Coder-32B-Instruct python eval_suite.py
-      python eval_suite.py            # local Ollama 7B (default)
+Run (from the backtester-app/ root, as a module):
+  LLM_PROVIDER=deepinfra DEEPINFRA_MODEL=deepseek-ai/DeepSeek-V3 python -m evals.probabilistic.eval_suite
+  LLM_PROVIDER=deepinfra DEEPINFRA_MODEL=Qwen/Qwen2.5-Coder-32B-Instruct python -m evals.probabilistic.eval_suite
+  python -m evals.probabilistic.eval_suite            # local Ollama 7B (default)
 """
 import os
 import math
