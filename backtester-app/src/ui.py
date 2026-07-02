@@ -16,8 +16,8 @@ except Exception:
 
 import pandas as pd
 from src.graph import build_run_graph
-from src.agents import (classify, write_spec, extract_legs, _leg_label, is_multi_asset_position,
-                        resolve_pair_tickers, resolve_ticker, scope_refusal)
+from src.agents import (classify, write_spec, extract_legs, _leg_label,
+                        resolve_ticker, scope_refusal)
 from src.runner import _load_strategy, _load_strategy_pair
 from src.core.robustness import rolling_robustness, rolling_robustness_pairs
 from src.core.engine import run_backtest
@@ -323,12 +323,9 @@ def process_request(req):
             return
         status.write(f"✓ understood — engine: **{s.get('mode')}**")
         s.update(write_spec(s)); status.write("✓ drafted the spec")
-        if is_multi_asset_position(req, s.get("mode")):
-            tks = resolve_pair_tickers(req)             # maps NAMES -> symbols (Exxon Mobil -> XOM); [] if unsure
-            s["mode"] = "pairs"
-            s["ticker"]   = tks[0] if len(tks) >= 1 else ""
-            s["ticker_b"] = tks[1] if len(tks) >= 2 else ""
-            status.write(f"✓ pairs: **{s['ticker'] or '?'} vs {s['ticker_b'] or '?'}**  (confirm below)")
+        # pairs is now decided in classify (mode + resolved tickers) - same routing for CLI / eval / UI
+        if s.get("mode") == "pairs":
+            status.write(f"✓ pairs: **{s.get('ticker') or '?'} vs {s.get('ticker_b') or '?'}**  (confirm below)")
         elif s.get("mode") == "contribution":
             s.update(extract_legs(s)); status.write("✓ parsed the legs")
         status.update(label="Ready ✓", state="complete")

@@ -74,17 +74,19 @@ A useful decomposition fell out of this: the **spec writer passes 21/21 on *both
 ### Model-ceiling experiment
 The model is a clean variable (swap `DEEPINFRA_MODEL`, same baselines + data). 3 models × the suite, N=3:
 
-| Strategy | qwen-7B (local) | **Qwen-32B (deployed)** | DeepSeek-V3 (frontier) |
+| Strategy | qwen-7B (local) | **Qwen3-32B (deployed)** | DeepSeek-V3 (frontier) |
 |---|:---:|:---:|:---:|
 | SMA 50/200 regime | ✅ 3/3 | ✅ 3/3 | ✅ 3/3 |
 | 20-day breakout *(off-by-one causality)* | ❌ 0/3 | ✅ 3/3 | ✅ 3/3 |
-| RSI-14 *(any valid variant)* | ❌ broken | ✅ 3/3 | ✅ 3/3 |
-| RSI-14 *(Wilder-pinned — spec-following)* | — | — | ⚠️ ~50% (high variance) |
+| RSI-14 *(any valid variant)* | ❌ broken | 2/3 (1 NEAR) | ✅ 3/3 |
+| RSI-14 *(Wilder-pinned — spec-following)* | — | ✅ 3/3 | ⚠️ ~50% (high variance) |
+| Pairs XLF/XLI *(log-z spread — the 3rd engine)* | — | ✅ 3/3 | — |
 
-**Findings:**
+**Findings** *(1–3: the 27-Jun ceiling experiment; 4: the current deployed model)*:
 1. **There's a capability *threshold* between 7B and 32B** — above it, both the code-specialist (32B) *and* the frontier reasoner (V3) respect "prior 20 days *excluding* today"; the 7B fires 15% vs the baseline's 23%. It's a threshold, not a reasoning-vs-coding axis (running the 3rd column *falsified* the initial 2-column hypothesis).
 2. **32B already matches V3 — at ~¼ the cost.** Qwen-32B ≈ \$0.66/1M tokens ≈ **~\$0.01/build**; DeepSeek-V3 ≈ **~4× the cost** for *zero* measured gain on this suite → the app is deployed on **32B**.
 3. **RSI divergence was a *spec* flaw, not a model gap.** All three capable models independently chose simple-average RSI (Cutler's) over the Wilder baseline → identical ~81% divergence. The fix was the *ruler/spec* (pin the variant or accept both), not the model. No model can resolve an underspecified spec — itself a finding about spec fidelity.
+4. **The 3rd engine (pairs) is now graded — and the deployed model follows the pin.** Routing pairs through `classify` (previously UI-only, so the CLI/eval could never reach it) let the ruler finally grade the spread engine: **Qwen3-32B → 3/3** on the log-z pair (100% match, 100% on the baseline's trade bars). The same model also passes **Wilder-pinned RSI 3/3** — a real shift from the earlier V3 data point (~50%, high variance). So on the model actually shipped, an explicit spec-pin *does* hold: the *ruler* fix (pin the variant) + a capable coder closes the underspecified-RSI gap from finding 3.
 
 ### Reproduce
 Run from the `backtester-app/` root as modules (see [`evals/`](evals/README.md) for the full layout):
@@ -93,7 +95,7 @@ DEEPINFRA_MODEL=Qwen/Qwen3-32B                  LLM_PROVIDER=deepinfra python -m
 DEEPINFRA_MODEL=deepseek-ai/DeepSeek-V3         LLM_PROVIDER=deepinfra python -m evals.probabilistic.eval_suite
 python -m evals.probabilistic.eval_suite     # local 7B
 ```
-*(Numbers as of 27-Jun-2026; cost figures are DeepInfra list-price estimates.)*
+*(Deployed column + pairs row: 03-Jul-2026, Qwen3-32B, N=3 — the RSI-any cell had 1 NEAR (89%, just under the 90% threshold). The 7B and DeepSeek-V3 columns are the 27-Jun-2026 model-ceiling experiment (Qwen2.5-Coder-32B era), kept for the capability-threshold finding. Cost figures are DeepInfra list-price estimates.)*
 
 ---
 

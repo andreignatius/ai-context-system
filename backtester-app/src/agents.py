@@ -6,7 +6,9 @@ from .config import get_llm
 from .state import BuildEvent
 
 _PAIRS_WORDS = ("pairs", "spread", "relative value", "market neutral", "cointegrat", "ratio")
-_NOT_TICKERS = {"RSI","SMA","EMA","MACD","DCA","ETF","USD","AND","THE","SD","ATR","ADX","VWAP","OBV"}
+_NOT_TICKERS = {"RSI","SMA","EMA","MACD","DCA","ETF","USD","AND","THE","SD","ATR","ADX","VWAP","OBV",
+                # common all-caps words in strategy prose that are NOT tickers (avoid false "2-ticker" pairs)
+                "PRIOR","NOT","LOG","LONG","SHORT","FLAT","STD","MEAN","OU","DAY","DAYS","HIGH","BUY","SELL"}
 
 # ONE PROMPT, ONE JOB: mode classification kept separate from param extraction (combining the two
 # degraded mode accuracy - the critical routing decision). See Lesson 029.
@@ -128,12 +130,14 @@ def is_multi_asset_position(request: str, mode: str) -> bool:
     if mode != "position":
         return False
     r = request.lower()
-    if any(w in r for w in _PAIRS_WORDS):                       # "pairs", "spread", ...
+    if any(w in r for w in _PAIRS_WORDS):                       # "pairs", "spread", "relative value", ...
         return True
-    if re.search(r"\blong\b.+\bshort\b", r):                    # "long X ... short Y"
+    if re.search(r"\b(vs|versus)\b", r):                        # "X vs Y" - an explicit pairing connective
         return True
+    # else: 2+ distinct ticker-like tokens (catches "XLF XLI" without a keyword). NOTE: dropped the old
+    # "long ... short" heuristic - a SINGLE-asset long/short (e.g. RSI oversold/overbought) is NOT a pair.
     toks = set(re.findall(r"\b[A-Z]{2,5}(?:-USD)?\b", request)) - _NOT_TICKERS
-    return len(toks) >= 2                                       # 2+ distinct tickers named
+    return len(toks) >= 2
 
 def extract_pair_tickers(request: str) -> list:
     """Distinct ticker-like tokens in order (for pairs: the first two = A, B)."""
@@ -272,6 +276,16 @@ def classify(state):
                 amount = float(val)
             except ValueError:
                 amount = None
+    # PAIRS: a multi-asset "position" request is really the pairs engine. Detect it HERE (not UI-only) so the
+    # CLI + eval + UI all route identically - the pairs engine was previously UNREACHABLE from classify.
+    if mode == "position" and is_multi_asset_position(req, mode):
+        tks = resolve_pair_tickers(req)
+        print(f"[classify] mode=pairs {tks}")
+        out = {"mode": "pairs", "ticker": tks[0] if len(tks) >= 1 else "",
+               "ticker_b": tks[1] if len(tks) >= 2 else ""}
+        if start:
+            out["start_date"] = start
+        return out
     print(f"[classify] mode={mode} ticker={ticker} start={start} amount={amount}")
     out = {"mode": mode}
     if ticker:

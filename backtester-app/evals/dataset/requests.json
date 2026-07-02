@@ -57,9 +57,9 @@
   {
     "id": "pairs_ko_pep",
     "request": "Pairs trade KO vs PEP: long the weaker when the z-score of the spread exceeds 2",
-    "tags": ["pairs", "position"],
-    "note": "classify returns position; the UI reroutes to the pairs engine via is_multi_asset_position",
-    "classify": {"mode": "position", "ticker": null, "start": null, "amount": null},
+    "tags": ["pairs"],
+    "note": "classify now returns pairs directly (routing unified out of the UI) and resolves the two tickers",
+    "classify": {"mode": "pairs", "ticker": "KO", "start": null, "amount": null},
     "spec_must_include": ["ko", "pep", "spread|z-score|pair", "2"]
   },
   {
