@@ -7,7 +7,7 @@ strategy's first active bar (so an inert warm-up never counts against the headli
 import numpy as np
 import pandas as pd
 
-from .engine import run_backtest
+from .engine import run_backtest, compute_targets
 
 
 def _window_metrics(eq_norm, ppy):
@@ -56,9 +56,8 @@ def _roll(eqc, position, index, bench_prices, test_months, step_months, ppy):
 
 def rolling_robustness(prices, strategy, test_months=12, step_months=6, periods_per_year=252):
     """POSITION (single-asset): regime robustness + a per-window buy-and-hold benchmark."""
-    bt = run_backtest(prices, strategy)
-    targets = pd.Series([strategy(prices.iloc[: t + 1]) for t in range(len(prices))],
-                        index=prices.index, dtype=float)
+    targets = compute_targets(prices, strategy)          # once, shared with the engine below
+    bt = run_backtest(prices, strategy, targets=targets)
     position = targets.shift(1).fillna(0.0)
     table, summary = _roll(bt.equity_curve, position, prices.index, prices,
                            test_months, step_months, periods_per_year)
@@ -69,12 +68,11 @@ def rolling_robustness(prices, strategy, test_months=12, step_months=6, periods_
 def rolling_robustness_pairs(prices_a, prices_b, strategy_pair, test_months=12, step_months=6, periods_per_year=252):
     """PAIRS (multi-asset, dollar-neutral): regime robustness. NO buy-and-hold benchmark - a pair is
     market-neutral, so B&H is not a meaningful comparison."""
-    from .pairs import run_pairs_backtest
+    from .pairs import run_pairs_backtest, compute_pair_targets
     idx = prices_a.index.intersection(prices_b.index)
     a, b = prices_a.reindex(idx), prices_b.reindex(idx)
-    res = run_pairs_backtest(a, b, strategy_pair)
-    targets = pd.Series([strategy_pair(a.iloc[: t + 1], b.iloc[: t + 1]) for t in range(len(idx))],
-                        index=idx, dtype=float)
+    targets = compute_pair_targets(a, b, strategy_pair)  # once, shared with the engine below
+    res = run_pairs_backtest(a, b, strategy_pair, targets=targets)
     position = targets.shift(1).fillna(0.0)
     table, summary = _roll(res.equity_curve, position, idx, None, test_months, step_months, periods_per_year)
     summary["full_sharpe"] = float(res.sharpe)

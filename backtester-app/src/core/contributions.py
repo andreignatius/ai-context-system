@@ -4,8 +4,9 @@ The position engine (src/engine.py) answers "what FRACTION to hold" (growth of $
 This answers "how much MONEY would I have": deposit $X on a schedule, track units bought -> total
 invested -> final dollar value. Lets you compare buy-the-dip ($X on each signal) vs DCA ($X each
 month) in actual dollars. See Lesson 028 (the position-vs-contribution boundary)."""
-import numpy as np
 import pandas as pd
+
+from .engine import compute_targets
 
 
 def run_contributions(prices, deposit_dates, amount: float = 1000.0):
@@ -37,8 +38,8 @@ def weekly_dates(prices):
 def signal_dates(prices, strategy):
     """Bars where the strategy fires (>0) - deposit on each such bar (e.g. each dip). Point-in-time:
     the signal at bar t sees only prices up to t, and we deposit at t's close (no look-ahead)."""
-    fires = np.array([strategy(prices.iloc[: t + 1]) > 0 for t in range(len(prices))])
-    return prices.index[fires]
+    fires = compute_targets(prices, strategy) > 0    # point-in-time: the signal at t sees only prices up to t
+    return prices.index[fires.values]
 
 
 def schedule_dates(prices, cadence, strategy=None):

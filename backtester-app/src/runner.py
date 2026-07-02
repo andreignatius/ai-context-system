@@ -10,8 +10,8 @@ import pandas as pd
 import traceback
 import ast
 
-from .core.engine import run_backtest
-from .core.pairs import run_pairs_backtest
+from .core.engine import run_backtest, compute_targets
+from .core.pairs import run_pairs_backtest, compute_pair_targets
 
 BANNED_CALLS = {"eval", "exec", "open", "__import__", "compile", "getattr", "globals"}
 ALLOWED_IMPORTS = {"pandas", "numpy", "math"}
@@ -46,22 +46,22 @@ def run_strategy(strategy_code: str, prices) -> dict:
     except Exception as e:
         return {"passed": False, "failures": f"load error: {e}", "metrics": {}}
 
-    # 2. run through the engine
+    # 2. run through the engine (compute the point-in-time targets ONCE, reuse for the soundness checks)
     try:
-        result = run_backtest(prices, strategy)
+        targets = compute_targets(prices, strategy)
+        result = run_backtest(prices, strategy, targets=targets)
     except Exception as e:
-        # return {"passed": False, "failures": f"runtime error: {e}", "metrics": {}}
         return {"passed": False,
                 "failures": f"runtime error: {type(e).__name__}: {e}\n{traceback.format_exc()}",
                 "metrics": {}}
     # 3. soundness checks (NOT profitability)
     failures = []
-    targets = pd.Series([strategy(prices.iloc[: t + 1]) for t in range(len(prices))], dtype=float)
     if not np.isfinite(targets).all():
         failures.append("strategy produced non-finite positions")
     if (targets.abs() > 1.0 + 1e-9).any():
         failures.append("positions out of range [-1, 1]")
-    result2 = run_backtest(prices, strategy)
+    # determinism: recompute the targets a SECOND time (deliberately) and confirm the engine matches
+    result2 = run_backtest(prices, strategy, targets=compute_targets(prices, strategy))
     if not np.array_equal(result.equity_curve.values, result2.equity_curve.values):
         failures.append("strategy is not deterministic")
 
@@ -87,13 +87,13 @@ def run_pair_strategy(code: str, prices_a, prices_b) -> dict:
         strat = _load_strategy_pair(code)
     except Exception as e:
         return {"passed": False, "failures": f"load error: {e}", "metrics": {}}
-    try:
-        result = run_pairs_backtest(prices_a, prices_b, strat)
-    except Exception as e:
-        return {"passed": False, "failures": f"runtime error: {type(e).__name__}: {e}", "metrics": {}}
     idx = prices_a.index.intersection(prices_b.index)
     a, b = prices_a.reindex(idx), prices_b.reindex(idx)
-    targets = pd.Series([strat(a.iloc[: t + 1], b.iloc[: t + 1]) for t in range(len(idx))], dtype=float)
+    try:
+        targets = compute_pair_targets(a, b, strat)          # compute ONCE, reuse for the engine + checks
+        result = run_pairs_backtest(a, b, strat, targets=targets)
+    except Exception as e:
+        return {"passed": False, "failures": f"runtime error: {type(e).__name__}: {e}", "metrics": {}}
     failures = []
     if not np.isfinite(targets).all():
         failures.append("strategy produced non-finite positions")

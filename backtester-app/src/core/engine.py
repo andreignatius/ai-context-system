@@ -26,10 +26,18 @@ class BacktestResult:
     n_trades: int
 
 
-def run_backtest(prices, strategy, fee=DEFAULT_FEE, periods_per_year=252) -> BacktestResult:
-    # 1. point-in-time: strategy sees ONLY prices up to and including bar t
-    targets = [strategy(prices.iloc[: t + 1]) for t in range(len(prices))]
-    targets = pd.Series(targets, index=prices.index, dtype=float)
+def compute_targets(prices, strategy) -> pd.Series:
+    """Point-in-time target series: the ONE expanding-window loop the whole app shares. `strategy`
+    sees ONLY prices up to AND INCLUDING bar t (no look-ahead). Callers that need the targets for
+    both the engine AND a soundness/robustness check compute them once here and thread them through
+    (via run_backtest's `targets=`), instead of re-running this O(N^2) loop. See docs/review.md #2."""
+    return pd.Series([strategy(prices.iloc[: t + 1]) for t in range(len(prices))],
+                     index=prices.index, dtype=float)
+
+
+def run_backtest(prices, strategy, fee=DEFAULT_FEE, periods_per_year=252, targets=None) -> BacktestResult:
+    # 1. point-in-time: strategy sees ONLY prices up to and including bar t (reuse precomputed if given)
+    targets = compute_targets(prices, strategy) if targets is None else targets
 
     # 2. the LAG: a target decided at t is held from t+1 (no same-bar fill)
     position = targets.shift(1).fillna(0.0)

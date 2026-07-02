@@ -29,6 +29,7 @@ import pandas as pd
 
 from src.graph import build_graph
 from src.runner import _load_strategy
+from src.core.engine import compute_targets
 from src.config import LLM_PROVIDER
 
 N_RUNS = int(os.getenv("EVAL_N", "3"))
@@ -109,7 +110,7 @@ def grade_position(prices, code, idea):
     warmup, thresh = idea["warmup"], idea["thresh"]
     try:
         strat = _load_strategy(code)
-        at = [strat(prices.iloc[: t + 1]) for t in range(len(prices))]
+        at = compute_targets(prices, strat).tolist()      # positional list, indexed at[t] below
     except Exception as e:
         return "UNSOUND", f"{type(e).__name__}: {str(e)[:40]}"
     if any((not math.isfinite(x)) or abs(x) > 1.0 + 1e-9 for x in at):
@@ -150,7 +151,7 @@ def main():
     print(f"data: SPY  {prices.index[0].date()} -> {prices.index[-1].date()}  ({len(prices)} bars)\n")
 
     for idea in IDEAS:                                   # precompute each acceptable baseline's targets once
-        idea["_btargets"] = {name: [fn(prices.iloc[: t + 1]) for t in range(len(prices))]
+        idea["_btargets"] = {name: compute_targets(prices, fn).tolist()
                              for name, fn in idea["baselines"]}
 
     app = build_graph()
