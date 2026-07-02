@@ -3,7 +3,7 @@
 > **🚀 Live:** [quant-backtester.streamlit.app](https://quant-backtester.streamlit.app)
 > An AI quant backtester that's **honest about the three ways backtests lie** — look-ahead, overfitting, and costs — not just plausible-looking code.
 
-Describe a strategy or a money question in plain English. The system writes the strategy, runs it **point-in-time** (look-ahead is structurally impossible), grades it against a **known-correct baseline**, and lets you **stress-test it out-of-sample** — net of transaction costs.
+Describe a strategy or a money question in plain English. The system writes the strategy, runs it **point-in-time** (look-ahead is structurally impossible), and lets you **stress-test it out-of-sample** — net of transaction costs. The *coder* behind it is graded against **known-correct baselines** by an offline eval suite (the "ruler"); a live run itself is checked for **soundness, not graded** per-request — and the app says so plainly.
 
 The domain port of a multi-agent [code-builder](../README.md): same orchestrator → coder → self-healing judge skeleton, retargeted from "make the tests pass" to "produce an *honest* backtest."
 
@@ -11,12 +11,12 @@ The domain port of a multi-agent [code-builder](../README.md): same orchestrator
 
 ## Why this is different — the honesty stack
 
-NL→backtest is a crowded space ("vibe trading"). Most tools generate code, plot a pretty equity curve, and stop. The differentiator here is **eval-first**: a backtest only earns trust by clearing four gates, in order.
+NL→backtest is a crowded space ("vibe trading"). Most tools generate code, plot a pretty equity curve, and stop. The differentiator here is **eval-first**: trust is earned by clearing four gates — each a different way a backtest lies. **Gate 1 (sound)** and **gate 4 (net-of-cost)** hold on every live run; **gate 3 (robust)** is one click away; **gate 2 (correct)** is proven **offline** — on the *coder*, against human-verified baselines — so a live run is honestly *sound, not verified-correct*.
 
 | Gate | The lie it catches | How it's enforced |
 |------|--------------------|-------------------|
 | **1. Sound** | code that crashes, or quietly peeks at the future | a point-in-time loop (`strategy(prices.iloc[:t+1])`) + a 1-bar position lag (`.shift(1)`) → the strategy *cannot* see data it wouldn't have had. Look-ahead is **structural**, not a guideline. |
-| **2. Correct** | plausible-but-wrong logic (the code runs, the number is wrong) | graded against a **human-verified baseline** — a "ruler" — not against self-written tests. Catches the bugs you'd otherwise eyeball. |
+| **2. Correct** | plausible-but-wrong logic (the code runs, the number is wrong) | graded against a **human-verified baseline** — a "ruler" — not self-written tests. **Enforced offline** (the eval suite, on the coder); a live run is sound-checked, not graded. Catches the bugs you'd otherwise eyeball. |
 | **3. Robust** | curve-fit parameters that won't generalize | rolling **out-of-sample** windows + a per-window buy-and-hold benchmark → *"positive in 4/12 windows, beats buy-and-hold in 3 — looks like beta, not alpha."* |
 | **4. Net-of-cost** | high-turnover strategies flattered by a frictionless engine | a default **~5 bps/side** transaction cost. A 240-trade churn strategy's Sharpe flips **+0.38 → −0.38** — it can no longer masquerade as profitable. Buy-and-hold (1 trade) is untouched. |
 
@@ -49,11 +49,11 @@ request ─▶ classify ─▶ write spec ─▶ [confirm + edit spec]  ◀─ h
                                   soundness check ─┘
                                           │
                                           ▼
-                        grade vs ruler · stress-test out-of-sample · net-of-cost
+              [live: soundness + net-of-cost + on-click robustness]   ·   [offline: grade vs ruler]
 ```
 
 - **Editable-spec confirm flow** — the interpretation is shown *before* running; your edited words go straight to the coder (no LLM re-interpretation on the last mile).
-- **AST exec-sandbox** — LLM-written strategy code is validated (no dangerous imports / calls / dunders) *before* `exec`, since it runs in-process on a public app.
+- **Sandboxed exec** — LLM-written strategy code runs in a **spawned subprocess with a wall-clock timeout + memory cap**, fronted by an **AST guardrail** (rejects dangerous imports / calls / dunders before `exec`). An infinite loop or a memory bomb fails as a clean soundness error, not a hung public app. *(The AST check is a guardrail against model mistakes; the process bound is the real containment.)*
 - **Prompt-driven** — ticker, dates, and amounts are extracted from your request; company names resolve to symbols (Exxon Mobil → XOM) with a confirm step.
 
 ---
@@ -130,7 +130,7 @@ backtester-app/
 │   │   ├── metrics.py       #   Sharpe / drawdown / CAGR / annual returns
 │   │   └── data.py          #   yfinance loader (daily, auto-adjusted)
 │   ├── agents.py        # the LLM layer: classify / spec / coder / judge + scope guard + extraction
-│   ├── runner.py        # AST sandbox + strategy loader (the bridge: AI code -> core engine)
+│   ├── runner.py        # sandboxed exec (subprocess: timeout + memory cap; AST guardrail) + loader
 │   ├── graph.py         # the LangGraph wiring (dispatch + self-healing loop)
 │   ├── export.py        # standalone-script generator
 │   ├── evals.py         # position-mode ruler (python -m src.evals) — runs GROSS by design
