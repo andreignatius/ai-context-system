@@ -1,4 +1,5 @@
-"""Ground-truth the engine: buy-and-hold must EXACTLY track the normalized price."""
+"""Ground-truth the engine MECHANICS (point-in-time, 1-bar lag, no look-ahead) at fee=0, so the exact-equality
+checks isolate MECHANICS from COST. The transaction-cost path (fee * turnover) is tested SEPARATELY below."""
 import numpy as np
 import pandas as pd
 
@@ -12,7 +13,7 @@ prices = pd.Series(
 )
 
 buy_and_hold = lambda h: 1.0
-res = run_backtest(prices, buy_and_hold)
+res = run_backtest(prices, buy_and_hold, fee=0.0)   # GROSS: reconcile MECHANICS; cost is ground-truth 4 below
 
 expected_total = prices.iloc[-1] / prices.iloc[0] - 1
 expected_equity = prices / prices.iloc[0]
@@ -25,7 +26,19 @@ print("sharpe:", round(res.sharpe, 3), "| max_dd:", round(res.max_drawdown, 4),
 
 assert np.isclose(res.total_return, expected_total), "buy-and-hold total return mismatch!"
 assert np.allclose(res.equity_curve.values, expected_equity.values), "equity != normalized price!"
-print("\nPASS: engine reconciles buy-and-hold exactly.")
+print("\nPASS: engine reconciles buy-and-hold exactly (gross).")
+
+
+# --- ground-truth 4: the COST path (deliberate) - a positive-turnover run drops by ~fee * turnover ---
+FEE = 0.0005
+net_bh = run_backtest(prices, buy_and_hold, fee=FEE)      # same run, WITH cost; `res` above is the gross baseline
+drag = res.total_return - net_bh.total_return
+print("\n[transaction cost]")
+print(f"buy-and-hold gross: {res.total_return:.6f} | net: {net_bh.total_return:.6f} | "
+      f"drag: {drag:.6f} | FEE*turnover: {FEE * res.turnover_total:.6f}")
+assert net_bh.total_return < res.total_return, "fee should REDUCE net return!"
+assert np.isclose(drag, FEE * res.turnover_total, rtol=0.15, atol=1e-5), "cost drag != ~fee*turnover!"
+print("PASS: net return drops by ~fee*turnover (cost path works).")
 
 
 # --- ground-truth 2: SMA crossover must match an independent vectorized recompute ---
@@ -34,9 +47,9 @@ def sma_crossover(history, fast=2, slow=4):
         return 0.0
     return 1.0 if history.iloc[-fast:].mean() > history.iloc[-slow:].mean() else 0.0
 
-res2 = run_backtest(prices, sma_crossover)
+res2 = run_backtest(prices, sma_crossover, fee=0.0)   # GROSS: compare MECHANICS to the vectorized reference
 
-# independent vectorized reference (NO point-in-time loop)
+# independent vectorized reference (NO point-in-time loop; also fee-free)
 fast_ma = prices.rolling(2).mean()
 slow_ma = prices.rolling(4).mean()
 ref_pos = (fast_ma > slow_ma).astype(float).shift(1).fillna(0.0)
