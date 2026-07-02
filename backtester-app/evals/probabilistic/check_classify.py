@@ -1,35 +1,51 @@
-"""Check the request classifier + param extraction (needs the LLM, e.g. local Ollama)."""
+"""Per-agent eval: the CLASSIFIER (routing + param extraction). Reads the SHARED dataset
+(evals/dataset/requests.json) and checks classify's `mode` for every case, plus the extracted params
+(start-presence / amount / named ticker) for the backtest modes. Pass-rate over N runs (EVAL_N, default 1).
+Needs the LLM.
+
+The test cases live in the dataset (not inline here) so classify + spec are graded from ONE source of truth -
+add a case once and it tests both agents.
+
+Run (from the backtester-app/ root):  python -m evals.probabilistic.check_classify
+"""
+import os
+import json
+import pathlib
+
 from src.agents import classify
 
-# (request, expected mode, expected start present?, expected amount)
-cases = [
-    ("go long when the 20-day return is positive, else flat", "position", None, None),
-    ("backtest an SMA 20/50 crossover strategy", "position", None, None),
-    ("if there is a 3-day drawdown I put in $1000 since 2021, how much vs monthly DCA",
-     "contribution", "2021-01-01", 1000.0),
-    ("how much money would I have if I DCA'd $500 a month into QQQ", "contribution", None, 500.0),
-    ("invest $2k every time RSI drops below 30 since 2020, total value?", "contribution", "2020-01-01", 2000.0),
-    # IN-SCOPE, must NOT regress to out_of_scope (fancy-sounding but price-only):
-    ("pairs trade KO vs PEP with a 2 sigma z-score band", "position", None, None),
-    ("mean reversion: long AAPL when RSI(14) < 30, exit at 70", "position", None, None),
-    # HELP (meta) must stay help, not out_of_scope:
-    ("hi what can you do?", "help", None, None),
-    # OUT_OF_SCOPE (the feasibility gate, gate 0):
-    ("design a strategy on trade-finance spreads via CDS proxies on commodity banks", "out_of_scope", None, None),
-    ("backtest a strategy using P/E ratios and short interest", "out_of_scope", None, None),
-    ("long SPY only when VIX is below 30", "out_of_scope", None, None),
-    ("buy when volume spikes to 2x the 20-day average", "out_of_scope", None, None),
-]
+N_RUNS = int(os.getenv("EVAL_N", "1"))
+DATA = pathlib.Path(__file__).resolve().parents[1] / "dataset" / "requests.json"
 
-correct = 0
-for request, exp_mode, exp_start, exp_amt in cases:
-    out = classify({"request": request})
-    mode_ok = out["mode"] == exp_mode
-    start_ok = (out.get("start_date") is not None) == (exp_start is not None)
-    amt_ok = out.get("amount") == exp_amt
-    ok = mode_ok and start_ok and amt_ok
-    correct += ok
-    print(f"[{'ok  ' if ok else 'MISS'}] mode={out['mode']:12} start={str(out.get('start_date')):11} "
-          f"amount={out.get('amount')!s:7} | {request[:46]}")
 
-print(f"\n{correct}/{len(cases)} fully correct (mode + start presence + amount)")
+def check(out, exp):
+    """Grade one classify output vs the dataset's expected `classify` block. Returns (ok, detail)."""
+    if out.get("mode") != exp["mode"]:
+        return False, f"mode={out.get('mode')} (want {exp['mode']})"
+    if exp["mode"] in ("help", "out_of_scope"):
+        return True, "mode ok"                       # these short-circuit: no params to check
+    bad = []
+    if (out.get("start_date") is not None) != (exp.get("start") is not None):
+        bad.append("start")
+    if out.get("amount") != exp.get("amount"):
+        bad.append("amount")
+    if exp.get("ticker") and (out.get("ticker") or "").upper() != exp["ticker"].upper():
+        bad.append("ticker")
+    return (not bad), ("ok" if not bad else "wrong: " + ", ".join(bad))
+
+
+def main():
+    cases = json.loads(DATA.read_text())
+    print(f"\nCLASSIFY eval: {len(cases)} cases x {N_RUNS} run(s)\n")
+    correct = total = 0
+    for c in cases:
+        for _ in range(N_RUNS):
+            ok, detail = check(classify({"request": c["request"]}), c["classify"])
+            correct += ok
+            total += 1
+            print(f"  [{'ok  ' if ok else 'MISS'}] {c['id']:20} {detail}")
+    print(f"\n{correct}/{total} correct (mode + params)")
+
+
+if __name__ == "__main__":
+    main()

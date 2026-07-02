@@ -4,8 +4,8 @@ by running the AI's code and a hand-written reference through the SAME engine an
 comparing. This is what catches sound-but-wrong strategies (e.g. iloc[0] vs iloc[-21])."""
 from .graph import build_graph
 from .runner import _load_strategy
-from .engine import run_backtest
-from .data import load_prices
+from .core.engine import run_backtest
+from .core.data import load_prices
 
 app = build_graph()
 PRICES = load_prices("SPY", "2y")

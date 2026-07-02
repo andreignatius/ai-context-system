@@ -2,7 +2,7 @@
 Uses the verified contribution engine (src/contributions.py). Needs network (yfinance)."""
 import yfinance as yf
 import pandas as pd
-from src.contributions import run_contributions, monthly_dates, signal_dates
+from src.core.contributions import run_contributions, monthly_dates, signal_dates
 
 AMOUNT = 1000.0
 START = "2021-01-01"      # exact start date (the contribution question wants a real date, not "2y")

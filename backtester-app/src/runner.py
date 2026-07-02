@@ -10,8 +10,8 @@ import pandas as pd
 import traceback
 import ast
 
-from .engine import run_backtest
-from .pairs import run_pairs_backtest
+from .core.engine import run_backtest
+from .core.pairs import run_pairs_backtest
 
 BANNED_CALLS = {"eval", "exec", "open", "__import__", "compile", "getattr", "globals"}
 ALLOWED_IMPORTS = {"pandas", "numpy", "math"}

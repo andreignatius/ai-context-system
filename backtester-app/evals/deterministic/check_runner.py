@@ -1,5 +1,5 @@
 from src.runner import run_strategy
-from src.data import load_prices
+from src.core.data import load_prices
 
 prices = load_prices("SPY", "2y")
 

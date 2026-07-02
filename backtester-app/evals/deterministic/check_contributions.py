@@ -1,6 +1,6 @@
 """Ground-truth the contribution engine by hand on toy series (no network, no LLM)."""
 import pandas as pd
-from src.contributions import run_contributions, monthly_dates, signal_dates
+from src.core.contributions import run_contributions, monthly_dates, signal_dates
 
 
 def dip(history):

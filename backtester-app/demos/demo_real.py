@@ -1,5 +1,5 @@
-from src.engine import run_backtest
-from src.data import load_prices
+from src.core.engine import run_backtest
+from src.core.data import load_prices
 
 prices = load_prices("SPY", "2y")
 print(f"loaded {len(prices)} bars of SPY: {prices.index[0].date()} -> {prices.index[-1].date()}\n")

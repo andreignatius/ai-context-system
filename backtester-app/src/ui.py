@@ -19,10 +19,10 @@ from src.graph import build_run_graph
 from src.agents import (classify, write_spec, extract_legs, _leg_label, is_multi_asset_position,
                         resolve_pair_tickers, resolve_ticker, scope_refusal)
 from src.runner import _load_strategy, _load_strategy_pair
-from src.robustness import rolling_robustness, rolling_robustness_pairs
-from src.engine import run_backtest
-from src.data import load_prices
-from src.metrics import buy_and_hold, longest_drawdown_days, annual_returns, dca
+from src.core.robustness import rolling_robustness, rolling_robustness_pairs
+from src.core.engine import run_backtest
+from src.core.data import load_prices
+from src.core.metrics import buy_and_hold, longest_drawdown_days, annual_returns, dca
 from src.export import full_script, full_contribution_script, full_pairs_script
 from src.config import get_langfuse_handler
 

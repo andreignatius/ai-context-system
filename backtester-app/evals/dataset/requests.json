@@ -1,0 +1,122 @@
+[
+  {
+    "id": "sma_50_200",
+    "request": "Long SPY when the 50-day SMA is above the 200-day SMA, since 2020",
+    "tags": ["trend", "position"],
+    "classify": {"mode": "position", "ticker": "SPY", "start": "2020-01-01", "amount": null},
+    "spec_must_include": ["50", "200", "sma|moving average", "long", "spy"],
+    "spec_must_not": ["go short|short when|short signal|short position|short the"],
+    "baseline": "SMA 50/200"
+  },
+  {
+    "id": "rsi_30_70",
+    "request": "Go long SPY when RSI(14) is below 30 and exit when above 70, since 2020",
+    "tags": ["mean-reversion", "position"],
+    "classify": {"mode": "position", "ticker": "SPY", "start": "2020-01-01", "amount": null},
+    "spec_must_include": ["rsi", "14", "30", "70", "spy"],
+    "baseline": "RSI 14 (any valid)"
+  },
+  {
+    "id": "rsi_wilder_pinned",
+    "request": "Backtest SPY: compute the 14-day RSI using WILDER'S smoothing (an exponential moving average with alpha = 1/14, the standard RSI - NOT a simple average). Go long when RSI is below 30 and short when above 70, otherwise flat.",
+    "tags": ["mean-reversion", "position", "spec-following"],
+    "note": "DISCRIMINATING: models default to simple-MA RSI - does the spec PRESERVE the Wilder pin, or silently genericize to '14-day RSI'?",
+    "classify": {"mode": "position", "ticker": "SPY", "start": null, "amount": null},
+    "spec_must_include": ["rsi", "14", "wilder|exponential|alpha|ewm", "30", "70"]
+  },
+  {
+    "id": "breakout_20",
+    "request": "Long SPY when today's close is above the highest close of the prior 20 trading days",
+    "tags": ["breakout", "position"],
+    "classify": {"mode": "position", "ticker": "SPY", "start": null, "amount": null},
+    "spec_must_include": ["20", "high|highest|breakout", "long", "spy"],
+    "spec_must_not": ["go short|short when|short signal|short position|short the"],
+    "baseline": "20d breakout"
+  },
+  {
+    "id": "mom_20day",
+    "request": "Go long when the 20-day return is positive, else flat",
+    "tags": ["momentum", "position"],
+    "classify": {"mode": "position", "ticker": null, "start": null, "amount": null},
+    "spec_must_include": ["20", "return|momentum|positive", "long"]
+  },
+  {
+    "id": "buy_the_dip_vs_dca",
+    "request": "Buy $1000 on every 3-consecutive-day dip vs $1000 monthly DCA, since 2021",
+    "tags": ["dca", "contribution"],
+    "classify": {"mode": "contribution", "ticker": null, "start": "2021-01-01", "amount": 1000.0},
+    "spec_must_include": ["dip|drawdown|consecutive|down", "3"],
+    "baseline": "buy_the_dip"
+  },
+  {
+    "id": "dca_monthly_qqq",
+    "request": "How much would I have if I DCA'd $500 a month into QQQ?",
+    "tags": ["dca", "contribution"],
+    "classify": {"mode": "contribution", "ticker": "QQQ", "start": null, "amount": 500.0}
+  },
+  {
+    "id": "pairs_ko_pep",
+    "request": "Pairs trade KO vs PEP: long the weaker when the z-score of the spread exceeds 2",
+    "tags": ["pairs", "position"],
+    "note": "classify returns position; the UI reroutes to the pairs engine via is_multi_asset_position",
+    "classify": {"mode": "position", "ticker": null, "start": null, "amount": null},
+    "spec_must_include": ["ko", "pep", "spread|z-score|pair", "2"]
+  },
+  {
+    "id": "sma_20_50",
+    "request": "backtest an SMA 20/50 crossover strategy",
+    "tags": ["trend", "position"],
+    "classify": {"mode": "position", "ticker": null, "start": null, "amount": null},
+    "spec_must_include": ["20", "50", "sma|moving average|crossover"]
+  },
+  {
+    "id": "rsi_aapl",
+    "request": "mean reversion: long AAPL when RSI(14) is below 30, exit at 70",
+    "tags": ["mean-reversion", "position"],
+    "classify": {"mode": "position", "ticker": "AAPL", "start": null, "amount": null},
+    "spec_must_include": ["rsi", "14", "30", "70", "aapl"]
+  },
+  {
+    "id": "rsi_contribution_2k",
+    "request": "invest $2k every time RSI drops below 30 since 2020, what is the total value?",
+    "tags": ["mean-reversion", "dca", "contribution"],
+    "classify": {"mode": "contribution", "ticker": null, "start": "2020-01-01", "amount": 2000.0},
+    "spec_must_include": ["rsi", "30"]
+  },
+  {
+    "id": "oos_trade_finance",
+    "request": "Design a strategy on trade-finance spreads via CDS proxies on commodity banks as a leading signal for commodity dislocations",
+    "tags": ["scope", "out_of_scope"],
+    "classify": {"mode": "out_of_scope", "ticker": null, "start": null, "amount": null}
+  },
+  {
+    "id": "oos_fundamentals",
+    "request": "Backtest a strategy using P/E ratios and short interest",
+    "tags": ["scope", "out_of_scope"],
+    "classify": {"mode": "out_of_scope", "ticker": null, "start": null, "amount": null}
+  },
+  {
+    "id": "oos_vix_gate",
+    "request": "Long SPY only when VIX is below 30",
+    "tags": ["scope", "out_of_scope"],
+    "classify": {"mode": "out_of_scope", "ticker": null, "start": null, "amount": null}
+  },
+  {
+    "id": "oos_volume",
+    "request": "Buy when volume spikes to 2x the 20-day average",
+    "tags": ["scope", "out_of_scope"],
+    "classify": {"mode": "out_of_scope", "ticker": null, "start": null, "amount": null}
+  },
+  {
+    "id": "help_capabilities",
+    "request": "hi what can you do?",
+    "tags": ["help"],
+    "classify": {"mode": "help", "ticker": null, "start": null, "amount": null}
+  },
+  {
+    "id": "help_how",
+    "request": "how does this work?",
+    "tags": ["help"],
+    "classify": {"mode": "help", "ticker": null, "start": null, "amount": null}
+  }
+]

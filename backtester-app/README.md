@@ -66,6 +66,11 @@ Two tiers of eval — *deterministic* (the plumbing) and *probabilistic* (the AI
 
 **Probabilistic** (LLM, pass-rate over N runs): agents graded against **human-verified baselines** — the "ruler." Grading is by **target-series agreement** vs a documented point-in-time rule (bar-by-bar), *not* outcome metrics — so it catches an off-by-one a return-only check would miss. Verdicts: `CORRECT / NEAR (review) / BROKEN / UNSOUND / MISROUTED`.
 
+### Per-agent evals (a shared dataset, not just the final output)
+The app is a pipeline (`classify → spec → coder → judge`), so each agent is graded **on its own station** against a versioned dataset (`evals/dataset/requests.json`) — when a run is wrong, you know *which* agent failed. `python -m evals.coverage` shows coverage + which eval grades which agent.
+
+A useful decomposition fell out of this: the **spec writer passes 21/21 on *both* 32B and 7B** (it carries every key fact, including a "Wilder" pin), while the **coder** splits 7B from 32B (below). So the model ceiling is a *coder* ceiling, **not** a *spec* ceiling — the 7B interprets intent fine; it breaks at writing correct point-in-time code. *(Spec grading is keyword-presence — a proxy for dropped params, not deep semantic quality; that's the LLM-as-judge next step.)*
+
 ### Model-ceiling experiment
 The model is a clean variable (swap `DEEPINFRA_MODEL`, same baselines + data). 3 models × the suite, N=3:
 
@@ -117,13 +122,17 @@ LangGraph + LangChain · DeepInfra (Qwen2.5-Coder-32B) or Ollama · pandas/numpy
 ```
 backtester-app/
 ├── src/
-│   ├── agents.py        # classify / spec / coder / judge + ticker & leg extraction
-│   ├── engine.py        # the trusted verifier: point-in-time loop, 1-bar lag, net-of-cost metrics
-│   ├── pairs.py         # the dollar-neutral spread engine
-│   ├── contributions.py # the cash-flow / DCA engine
-│   ├── robustness.py    # rolling out-of-sample windows (+ per-window benchmark)
-│   ├── runner.py        # AST sandbox + strategy loader
+│   ├── core/            # THE DETERMINISTIC VERIFIER — no LLM dependency (the thesis, made structural)
+│   │   ├── engine.py        #   point-in-time loop, 1-bar lag, net-of-cost metrics
+│   │   ├── pairs.py         #   dollar-neutral spread engine
+│   │   ├── contributions.py #   cash-flow / DCA engine
+│   │   ├── robustness.py    #   rolling out-of-sample windows (+ per-window benchmark)
+│   │   ├── metrics.py       #   Sharpe / drawdown / CAGR / annual returns
+│   │   └── data.py          #   yfinance loader (daily, auto-adjusted)
+│   ├── agents.py        # the LLM layer: classify / spec / coder / judge + scope guard + extraction
+│   ├── runner.py        # AST sandbox + strategy loader (the bridge: AI code -> core engine)
 │   ├── graph.py         # the LangGraph wiring (dispatch + self-healing loop)
+│   ├── export.py        # standalone-script generator
 │   ├── evals.py         # position-mode ruler (python -m src.evals) — runs GROSS by design
 │   └── ui.py            # Streamlit chat, confirm flow, results
 ├── baselines/           # human-verified reference implementations (the rulers)

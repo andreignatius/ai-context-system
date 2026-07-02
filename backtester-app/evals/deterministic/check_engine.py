@@ -2,7 +2,7 @@
 import numpy as np
 import pandas as pd
 
-from src.engine import run_backtest
+from src.core.engine import run_backtest
 
 # a deterministic toy price series (no network needed)
 prices = pd.Series(

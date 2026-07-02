@@ -19,15 +19,25 @@ The model is non-deterministic (temp 0.5), so these report a **pass rate**, not 
 off-by-one a return-only check would miss is caught. Verdicts: `CORRECT / NEAR (review) / BROKEN / UNSOUND /
 MISROUTED`.
 
-| Script | Checks |
+Most of these read a **shared versioned dataset** — `dataset/requests.json` (one `(request -> expected)`
+bank), so classify + spec are graded from a single source of truth. `python -m evals.coverage` prints what it
+covers + which eval grades which agent (no LLM).
+
+| Script (per agent) | Checks |
 |---|---|
-| `check_classify.py` | the request classifier + the feasibility gate (in/out of scope, routing) |
-| `check_judge.py` | the judge: does a failure message route to the right culprit (code/spec/tests)? |
+| `check_classify.py` | **classify** — router + param extraction (mode / ticker / start / amount), incl. the feasibility gate |
+| `eval_spec.py` | **spec** — orchestrator faithfulness: does the spec carry the request's key facts (catches dropped params)? |
+| `eval_suite.py` | **coder** — multi-baseline **ruler** + **model-ceiling experiment** (swap models, same baselines) |
+| `check_judge.py` | **judge** — does a failure message route to the right culprit (code/spec/tests)? |
 | `check_contribution_eval.py` | the contribution **ruler** — agent vs `baselines/buy_the_dip.py` |
-| `eval_suite.py` | the multi-baseline **ruler** + **model-ceiling experiment** (swap models, same baselines) |
 
 *(The position-mode ruler lives in `src/evals.py`, run as `python -m src.evals` — it's tightly coupled to the
 graph it tests.)*
+
+**Finding (29-Jun):** the spec eval passes 21/21 on **both** 32B and 7B → the model ceiling is a *coder*
+ceiling, not a *spec* ceiling. The 7B interprets intent into a faithful spec fine; it breaks at writing
+correct point-in-time code (where `eval_suite` *does* split 7B from 32B). Keyword-presence is a proxy for
+faithfulness (catches dropped params), not deep semantic quality — that's the LLM-as-judge next step.
 
 ## Running
 Run **from the `backtester-app/` root** as modules (so `src/` and `baselines/` resolve):

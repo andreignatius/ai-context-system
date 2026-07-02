@@ -1,4 +1,4 @@
-# from .data import load_prices
+# from .core.data import load_prices
 # from .runner import run_strategy
 # from .agents import write_spec, write_code
 from .graph import build_graph
