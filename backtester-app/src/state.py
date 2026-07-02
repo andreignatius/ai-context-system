@@ -5,7 +5,7 @@ from dataclasses import dataclass
 
 class BacktestState(TypedDict):
     request: str
-    mode: str               # "position" | "contribution" - which engine to route to (M8)
+    mode: str               # "position"|"contribution"|"pairs"|"help"|"out_of_scope" - routing (M8 + gate 0)
     spec: str
     strategy_code: str
     run_result: dict        # from run_strategy: {passed, failures, metrics}

@@ -18,36 +18,41 @@ N_RUNS = 5
 TOL_DEPOSITS = 3        # deposit count within +/- 3
 TOL_MULT = 0.03         # per-dollar multiple within 0.03
 
-# --- data: SPY since 2021 (identical for baseline + agent) ---
-prices = yf.download("SPY", start="2021-01-01", auto_adjust=True, progress=False)["Close"]
-if isinstance(prices, pd.DataFrame):
-    prices = prices.iloc[:, 0]
-prices = prices.dropna()
+# GUARD REQUIRED: app.invoke routes the buy-the-dip prompt through the sandboxed signal leg, which SPAWNS a
+# child that re-imports THIS module. Without the `if __name__` guard the re-import re-runs everything below
+# -> a recursive spawn during bootstrap -> RuntimeError. Any module that reaches the sandbox at module scope
+# must be __main__-guarded (see docs/sandbox-plan.md, "Caller invariant").
+if __name__ == "__main__":
+    # --- data: SPY since 2021 (identical for baseline + agent) ---
+    prices = yf.download("SPY", start="2021-01-01", auto_adjust=True, progress=False)["Close"]
+    if isinstance(prices, pd.DataFrame):
+        prices = prices.iloc[:, 0]
+    prices = prices.dropna()
 
-# --- BASELINE (truth) on these prices ---
-base_dates = prices.index[[is_dip(prices.iloc[: t + 1]) for t in range(len(prices))]]
-_, base_inv, base_final = run_contributions(prices, base_dates, AMOUNT)
-base = {"n": len(base_dates), "mult": base_final / base_inv}
-print(f"BASELINE: {base['n']} deposits / {base['mult']:.2f}x   (SPY since 2021, $1k/deposit)\n")
+    # --- BASELINE (truth) on these prices ---
+    base_dates = prices.index[[is_dip(prices.iloc[: t + 1]) for t in range(len(prices))]]
+    _, base_inv, base_final = run_contributions(prices, base_dates, AMOUNT)
+    base = {"n": len(base_dates), "mult": base_final / base_inv}
+    print(f"BASELINE: {base['n']} deposits / {base['mult']:.2f}x   (SPY since 2021, $1k/deposit)\n")
 
-# --- run the AGENT N times ---
-app = build_graph()
-verdicts = []
-for i in range(N_RUNS):
-    r = app.invoke({"request": PROMPT, "prices": prices, "amount": AMOUNT})
-    if r.get("mode") != "contribution":
-        v, detail = "MISROUTED", ""
-    elif r.get("status") != "ok":
-        v, detail = "UNSOUND", str(r.get("run_result", {}).get("failures", ""))[:50]
-    else:
-        sig = r["contribution_result"]["signal"]
-        n = sig["n"]
-        mult = sig["final"] / sig["invested"] if sig["invested"] else 0.0
-        ok = abs(n - base["n"]) <= TOL_DEPOSITS and abs(mult - base["mult"]) < TOL_MULT
-        v, detail = ("CORRECT" if ok else "SOUND-BUT-WRONG"), f"{n} dep / {mult:.2f}x"
-    verdicts.append(v)
-    print(f"  run {i + 1}/{N_RUNS}: {v:16} {detail}")
+    # --- run the AGENT N times ---
+    app = build_graph()
+    verdicts = []
+    for i in range(N_RUNS):
+        r = app.invoke({"request": PROMPT, "prices": prices, "amount": AMOUNT})
+        if r.get("mode") != "contribution":
+            v, detail = "MISROUTED", ""
+        elif r.get("status") != "ok":
+            v, detail = "UNSOUND", str(r.get("run_result", {}).get("failures", ""))[:50]
+        else:
+            sig = r["contribution_result"]["signal"]
+            n = sig["n"]
+            mult = sig["final"] / sig["invested"] if sig["invested"] else 0.0
+            ok = abs(n - base["n"]) <= TOL_DEPOSITS and abs(mult - base["mult"]) < TOL_MULT
+            v, detail = ("CORRECT" if ok else "SOUND-BUT-WRONG"), f"{n} dep / {mult:.2f}x"
+        verdicts.append(v)
+        print(f"  run {i + 1}/{N_RUNS}: {v:16} {detail}")
 
-c = Counter(verdicts)
-print(f"\n{c['CORRECT']}/{N_RUNS} CORRECT | {c['SOUND-BUT-WRONG']} sound-but-wrong | "
-      f"{c['UNSOUND']} unsound | {c['MISROUTED']} misrouted")
+    c = Counter(verdicts)
+    print(f"\n{c['CORRECT']}/{N_RUNS} CORRECT | {c['SOUND-BUT-WRONG']} sound-but-wrong | "
+          f"{c['UNSOUND']} unsound | {c['MISROUTED']} misrouted")

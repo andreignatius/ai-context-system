@@ -50,7 +50,7 @@ python -m evals.deterministic.check_contributions
 # probabilistic (needs the LLM; network for the rulers)
 python -m evals.probabilistic.check_classify
 python -m evals.probabilistic.eval_suite                                    # local 7B
-DEEPINFRA_MODEL=Qwen/Qwen2.5-Coder-32B-Instruct LLM_PROVIDER=deepinfra python -m evals.probabilistic.eval_suite
+DEEPINFRA_MODEL=Qwen/Qwen3-32B                  LLM_PROVIDER=deepinfra python -m evals.probabilistic.eval_suite
 DEEPINFRA_MODEL=deepseek-ai/DeepSeek-V3         LLM_PROVIDER=deepinfra python -m evals.probabilistic.eval_suite
 ```
 

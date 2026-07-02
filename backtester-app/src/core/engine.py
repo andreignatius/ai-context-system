@@ -50,7 +50,9 @@ def run_backtest(prices, strategy, fee=DEFAULT_FEE, periods_per_year=252, target
     # 4. equity curve (starts at 1.0)
     equity = (1.0 + strat_ret).cumprod()
 
-    # 5. metrics
+    # 5. metrics. CHOICES (standard simplifications, documented not accidental): risk-free rate = 0 (Sharpe is
+    # excess-over-zero); annualization scales by BAR COUNT (periods_per_year), not calendar time - correct for a
+    # regular daily series, would need adjusting for irregular / intraday bars.
     total_return = float(equity.iloc[-1] - 1.0)
     ann_return = float((1.0 + total_return) ** (periods_per_year / len(equity)) - 1.0)
     std = strat_ret.std()

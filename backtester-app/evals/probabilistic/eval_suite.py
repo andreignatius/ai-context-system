@@ -17,7 +17,7 @@ This separates "correct-but-different-definition" from "broken" (2a) and stops p
 
 Run (from the backtester-app/ root, as a module):
   LLM_PROVIDER=deepinfra DEEPINFRA_MODEL=deepseek-ai/DeepSeek-V3 python -m evals.probabilistic.eval_suite
-  LLM_PROVIDER=deepinfra DEEPINFRA_MODEL=Qwen/Qwen2.5-Coder-32B-Instruct python -m evals.probabilistic.eval_suite
+  LLM_PROVIDER=deepinfra DEEPINFRA_MODEL=Qwen/Qwen3-32B python -m evals.probabilistic.eval_suite
   python -m evals.probabilistic.eval_suite            # local Ollama 7B (default)
 """
 import os

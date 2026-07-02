@@ -89,7 +89,7 @@ The model is a clean variable (swap `DEEPINFRA_MODEL`, same baselines + data). 3
 ### Reproduce
 Run from the `backtester-app/` root as modules (see [`evals/`](evals/README.md) for the full layout):
 ```bash
-DEEPINFRA_MODEL=Qwen/Qwen2.5-Coder-32B-Instruct LLM_PROVIDER=deepinfra python -m evals.probabilistic.eval_suite
+DEEPINFRA_MODEL=Qwen/Qwen3-32B                  LLM_PROVIDER=deepinfra python -m evals.probabilistic.eval_suite
 DEEPINFRA_MODEL=deepseek-ai/DeepSeek-V3         LLM_PROVIDER=deepinfra python -m evals.probabilistic.eval_suite
 python -m evals.probabilistic.eval_suite     # local 7B
 ```
@@ -116,7 +116,7 @@ Put `LANGFUSE_*` keys in `.env` to trace every run. The engine, baselines, and `
 ---
 
 ## Stack
-LangGraph + LangChain · DeepInfra (Qwen2.5-Coder-32B) or Ollama · pandas/numpy engine · yfinance (daily, auto-adjusted) · Streamlit · Langfuse · Python 3.11+
+LangGraph + LangChain · DeepInfra (Qwen3-32B) or Ollama · pandas/numpy engine · yfinance (daily, auto-adjusted) · Streamlit · Langfuse · Python 3.11+
 
 ## Layout
 ```
