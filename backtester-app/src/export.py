@@ -202,14 +202,15 @@ __STRATEGY_CODE__
 
 
 # === 3. ENGINE: point-in-time loop + 1-bar lag (look-ahead is structurally impossible) ===
-def run_pairs_backtest(prices_a, prices_b, strategy_pair):
+def run_pairs_backtest(prices_a, prices_b, strategy_pair, fee=0.0005):   # fee=~5bps/side -> NET of cost
     idx = prices_a.index.intersection(prices_b.index)        # common window
     a, b = prices_a.reindex(idx), prices_b.reindex(idx)
     targets = pd.Series([strategy_pair(a.iloc[: t + 1], b.iloc[: t + 1]) for t in range(len(idx))],
                         index=idx, dtype=float)
     position = targets.shift(1).fillna(0.0)                  # act on yesterday's signal
     ret_a, ret_b = a.pct_change().fillna(0.0), b.pct_change().fillna(0.0)
-    pnl = position * (ret_a - ret_b)                         # dollar-neutral spread return
+    turnover = position.diff().abs().fillna(position.abs())
+    pnl = position * (ret_a - ret_b) - fee * turnover        # dollar-neutral spread return, NET of cost
     equity = (1.0 + pnl).cumprod()
     return equity, position, pnl
 

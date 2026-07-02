@@ -1,0 +1,13 @@
+# Quant Backtester - this app's deps only (self-contained; NOT the sibling code-builder / langgraph-app).
+# Versions match the repo root so the live Streamlit deploy is unchanged. Python 3.11+.
+streamlit==1.58.0
+langgraph==1.0.10
+langchain-core==1.4.8
+langchain-ollama==1.1.0        # local Ollama provider
+langchain-openai==1.3.3        # DeepInfra (OpenAI-compatible) provider
+langfuse==4.9.1                # tracing (optional at runtime)
+yfinance==0.2.58               # daily close prices (matches root / the deployed app)
+pandas==3.0.1
+numpy==2.4.6
+python-dotenv==1.2.2
+matplotlib==3.11.0             # for the exported standalone scripts + baselines/ + demos/
