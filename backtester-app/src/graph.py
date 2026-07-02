@@ -1,7 +1,7 @@
 from langgraph.graph import StateGraph, START, END
 from .state import BacktestState, BuildEvent
 from .agents import write_spec, write_code, judge, classify
-from .runner import run_strategy, _load_strategy, run_pair_strategy
+from .runner import run_strategy, run_pair_strategy, run_signal_dates
 from .core.contributions import run_contributions, schedule_dates
 from .core.data import load_prices
 from .config import MAX_ATTEMPTS
@@ -101,12 +101,18 @@ def contribution_run(state):
                 return _scope_fail(str(e))
         leg_prices = [prices for _ in legs]
 
-    needs_signal = any(leg.get("cadence") == "signal" for leg in legs)   # only then must the code be valid
     try:
-        strategy = _load_strategy(state["strategy_code"]) if needs_signal else None
         computed = []
         for leg, lp in zip(legs, leg_prices):
-            dates = schedule_dates(lp, leg["cadence"], strategy)
+            if leg.get("cadence") == "signal":                       # SANDBOXED first exec of the LLM strategy
+                sr = run_signal_dates(state["strategy_code"], lp)
+                if not sr["passed"]:
+                    return {"status": "failed",
+                            "run_result": {"passed": False, "metrics": {},
+                                           "failures": f"runtime error (contribution signal): {sr['failures']}"}}
+                dates = sr["dates"]
+            else:
+                dates = schedule_dates(lp, leg["cadence"], None)     # calendar leg (weekly/monthly): no code exec
             if len(dates) == 0:          # inert guard (Lesson 025/029): a leg must actually fire
                 return {"status": "failed",
                         "run_result": {"passed": False, "metrics": {},

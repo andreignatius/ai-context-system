@@ -245,6 +245,8 @@ def render(b, uid=""):                  # uid keeps widget IDs unique across rep
             st.download_button("Download full script (.py)", script, key=f"p_script_{uid}",
                                file_name=f"backtest_{b.get('ticker', 'SPY')}.py",
                                mime="text/x-python")
+        # RE-exec of code already sandbox-vetted upstream in run_strategy (sandbox-plan.md decision b) - the
+        # dangerous FIRST exec was bounded, so this in-process re-run of known-good code can't newly hang.
         _robustness_ui(uid, "rob",
                        lambda tw, sp: rolling_robustness(px, _load_strategy(b["strategy_code"]), tw, sp),
                        has_bh=True)
@@ -489,6 +491,7 @@ if draft:
         b["prices"] = prices
         b["equity"] = None
         if b.get("mode") == "position" and b["status"] == "ok":
+            # RE-exec of code already sandbox-vetted (status=="ok" means it cleared run_strategy) - decision b
             b["equity"] = run_backtest(prices, _load_strategy(b["strategy_code"])).equity_curve
 
         st.session_state.history += [{"role": "user", "text": draft["request"]},
