@@ -71,3 +71,6 @@ docs/*
 
 # Claude
 .claude/*
+
+# confidential
+finance/*

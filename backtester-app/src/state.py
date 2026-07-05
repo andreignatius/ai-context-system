@@ -24,6 +24,8 @@ class BacktestState(TypedDict):
     pairs_result: dict      # pairs mode: {ticker_a, ticker_b, metrics, equity_curve}
     scope_error: bool       # the request is OUT OF SCOPE (e.g. identical legs / cross-asset) - refuse,
                             # do NOT self-heal (the judge can fix code, not an unsupported request)
+    method_note: dict       # method-feasibility disclosure: {method, needs, intent} when the request NAMES a
+                            # technique the engine can't faithfully build (e.g. vine copula) - proxy + disclose
     contribution_result: dict   # contribution mode: {amount, legs, signal:{...}, dca:{...}}
     ledger: Annotated[list, add]
 

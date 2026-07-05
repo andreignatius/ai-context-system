@@ -64,6 +64,42 @@ def _load_strategy_pair(code: str):
     return namespace["strategy_pair"]
 
 
+def _overlap_warning(code, prices):
+    """Fix 4: deterministic spec-consistency lint. If the strategy ends in
+    `return A if <long> else B if <short> else C`, probe whether <long> and <short> can BOTH be true on
+    some bar - a contradiction (the SHORT branch is then dead code, long is checked first). Returns a
+    warning string or None. Fires ONLY on the recognised pattern (no false positives on other shapes);
+    NEVER raises - a lint must not break a run."""
+    try:
+        tree = ast.parse(code)
+        fn = next((n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == "strategy"), None)
+        if fn is None:
+            return None
+        ret = None                        # the last top-level `A if long else B if short else C`
+        for n in fn.body:
+            if (isinstance(n, ast.Return) and isinstance(n.value, ast.IfExp)
+                    and isinstance(n.value.orelse, ast.IfExp)):
+                ret = n
+        if ret is None:
+            return None
+        long_test, short_test = ret.value.test, ret.value.orelse.test
+        ret.value = ast.Tuple(elts=[long_test, short_test], ctx=ast.Load())   # probe: return (long, short)
+        ast.fix_missing_locations(tree)
+        ns = {"pd": pd, "np": np}
+        exec(compile(tree, "<overlap-probe>", "exec"), ns)
+        probe = ns["strategy"]
+        step = max(1, len(prices) // 200)  # sample ~200 bars (bound the O(n^2) point-in-time cost)
+        for i in range(20, len(prices), step):
+            r = probe(prices.iloc[:i + 1])
+            if isinstance(r, tuple) and len(r) == 2 and bool(r[0]) and bool(r[1]):
+                return ("long and short conditions can BOTH be true on some bar - the SHORT branch is "
+                        "dead code (long is evaluated first). The rule may be self-contradictory "
+                        "(e.g. mean-reversion fading the band vs momentum riding it).")
+    except Exception:
+        return None                       # a lint must NEVER break a run
+    return None
+
+
 # --- BODY functions: run INSIDE the child. Each returns a plain, picklable dict. ---
 def _position_body(code, prices):
     try:
@@ -74,8 +110,13 @@ def _position_body(code, prices):
         targets = compute_targets(prices, strategy)                     # point-in-time targets ONCE, reuse below
         result = run_backtest(prices, strategy, targets=targets)
     except Exception as e:
+        tb = traceback.format_exc()
+        # Fix 3: a traceback that never enters the STRATEGY (exec'd as "<string>") is a HARNESS/DATA
+        # failure the coder cannot fix (e.g. degenerate data reaching the engine) - label it so the loop
+        # TERMINATES instead of burning coder attempts. A real strategy bug DOES show a "<string>" frame.
+        kind = "runtime error" if ("<string>" in tb or ", in strategy" in tb) else "harness error"
         return {"passed": False, "metrics": {},
-                "failures": f"runtime error: {type(e).__name__}: {e}\n{traceback.format_exc()}"}
+                "failures": f"{kind}: {type(e).__name__}: {e}\n{tb}"}
     failures = []
     if not np.isfinite(targets).all():
         failures.append("strategy produced non-finite positions")
@@ -88,7 +129,11 @@ def _position_body(code, prices):
                "sharpe": result.sharpe, "max_drawdown": result.max_drawdown, "n_trades": result.n_trades}
     if result.n_trades == 0:
         failures.append("strategy never takes a position (inert) - warm-up may exceed the data length")
-    return {"passed": len(failures) == 0, "failures": "; ".join(failures), "metrics": metrics}
+    out = {"passed": len(failures) == 0, "failures": "; ".join(failures), "metrics": metrics}
+    warn = _overlap_warning(code, prices)          # Fix 4: flag self-contradictory long/short (non-failing)
+    if warn:
+        out["warnings"] = warn
+    return out
 
 
 def _pairs_body(code, prices_a, prices_b):
@@ -102,7 +147,9 @@ def _pairs_body(code, prices_a, prices_b):
         targets = compute_pair_targets(a, b, strat)          # compute ONCE, reuse for the engine + checks
         result = run_pairs_backtest(a, b, strat, targets=targets)
     except Exception as e:
-        return {"passed": False, "failures": f"runtime error: {type(e).__name__}: {e}", "metrics": {}}
+        tb = traceback.format_exc()                          # Fix 3: harness/data error vs strategy bug
+        kind = "runtime error" if ("<string>" in tb or ", in strategy" in tb) else "harness error"
+        return {"passed": False, "failures": f"{kind}: {type(e).__name__}: {e}\n{tb}", "metrics": {}}
     failures = []
     if not np.isfinite(targets).all():
         failures.append("strategy produced non-finite positions")

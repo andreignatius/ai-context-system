@@ -186,6 +186,20 @@ def resolve_ticker(name: str) -> str:
     return m[0] if m else ""
 
 
+def resolve_symbol(raw, is_ok):
+    """First-class ticker resolution: the LLM PROPOSES a symbol, the FETCH VALIDATES it (never trust the
+    model's existence claim). `is_ok(sym)` is the caller's fetch-validator (the UI passes its cached
+    check). Returns (symbol, changed): the raw if it already loads (NO llm call), else an LLM-resolved
+    symbol that actually LOADS, else the raw unchanged (the caller surfaces the bad ticker)."""
+    raw = (raw or "").strip().upper()
+    if raw and is_ok(raw):
+        return raw, False                       # already valid - skip the LLM
+    cand = resolve_ticker(raw)                  # LLM name/alias -> Yahoo symbol
+    if cand and cand != raw and is_ok(cand):
+        return cand, True                       # resolved to something that actually loads
+    return raw, False                           # nothing better; the caller handles the bad ticker
+
+
 # --- FEASIBILITY GATE (gate 0 of the honesty stack) -------------------------------------------------
 # A SEPARATE call from MODE_PROMPT (Lesson 029: keep the routing decision from being degraded). Runs only
 # on non-help requests inside classify. "Can this be answered with daily close of 1-2 listed tickers?"
@@ -244,6 +258,63 @@ def scope_refusal(request: str) -> str:
     return _strip_think(llm.invoke([SystemMessage(content=SCOPE_REFUSAL_PROMPT),
                                     HumanMessage(content=request)]).content).strip()
 
+# --- METHOD-FEASIBILITY GATE (extends the DATA-scope gate to METHOD-scope) --------------------------
+# A SEPARATE call (Lesson 029), like scope_check. The engine runs a strategy as a numpy+pandas function on
+# daily closes - it has NO copula / GARCH / Kalman / ML libraries. scope_check asks "is the DATA available?";
+# this asks "can we faithfully build the METHOD?". If the request NAMES a technique from the curated list we
+# DISCLOSE the gap (the proxy still runs) rather than silently downgrade it. See method-feasibility-plan.md,
+# Lesson 044. CURATED LIST, not a fuzzy "too fancy?" - precise on named methods so plain price rules (z-score
+# / SMA / RSI) do NOT false-flag (banner fatigue would decay this into the silent-downgrade it prevents).
+METHOD_PROMPT = (
+    "You gate a quant BACKTESTER. Its strategy is a Python function using ONLY numpy + pandas on daily CLOSE "
+    "prices (1-2 tickers). It CANNOT fit or use: copulas / vine copulas, GARCH / EGARCH / stochastic-vol "
+    "models, Kalman filters, cointegration / Johansen tests, HMM / regime-switching models, ML / regression "
+    "models (trees, neural nets, SVMs), options / implied-vol models, or factor models (Fama-French).\n"
+    "Does the request NAME one of those techniques? Reply EXACTLY one line:\n"
+    "  NONE\n"
+    "  METHOD: <name> | NEEDS: <what a faithful version needs> | INTENT: <what it was for>\n"
+    "Flag ONLY a NAMED technique from the list above. Plain price rules are NOT flagged - "
+    "z-score / SMA / EMA / RSI / MACD / Bollinger / breakout / momentum / mean-reversion / DCA -> NONE.\n"
+    "Examples:\n"
+    "  'vine copula pairs trade NVDA vs AMD for tail dependence'\n"
+    "     -> METHOD: vine copula | NEEDS: a copula library + return-distribution fitting | INTENT: tail dependence\n"
+    "  'GARCH vol-targeting on QQQ'\n"
+    "     -> METHOD: GARCH | NEEDS: a volatility-model library | INTENT: volatility forecasting\n"
+    "  'Kalman-filter dynamic hedge ratio for KO/PEP'\n"
+    "     -> METHOD: Kalman filter | NEEDS: a state-space / filtering library | INTENT: a dynamic hedge ratio\n"
+    "  'z-score pairs trade KO vs PEP'                     -> NONE\n"
+    "  '50/200 SMA crossover on SPY'                       -> NONE\n"
+    "  'RSI(14) mean reversion on AAPL'                    -> NONE\n"
+)
+
+def _parse_method(reply):
+    """Parse the method-gate reply -> {method, needs, intent} or None. Robust to a small model that may wrap
+    the line in prose: scan for a NONE / METHOD: line anywhere. Missing NEEDS/INTENT default to ''."""
+    for line in reply.splitlines():
+        low = line.strip().lower()
+        if low.startswith("none"):
+            return None
+        if low.startswith("method:"):
+            segs = [s.strip() for s in line.split(":", 1)[1].split("|")]
+            fields = {"method": segs[0] if segs else "", "needs": "", "intent": ""}
+            for seg in segs[1:]:
+                if ":" in seg:
+                    k, v = seg.split(":", 1)
+                    if k.strip().lower() in ("needs", "intent"):
+                        fields[k.strip().lower()] = v.strip()
+            return fields if fields["method"] else None
+    return None
+
+def method_check(request: str):
+    """METHOD-feasibility gate. Returns {method, needs, intent} if the request NAMES a technique the engine
+    can't faithfully build (-> disclose the substitution), else None. Separate call (un-degraded, Lesson 029)."""
+    reply = _strip_think(llm.invoke([SystemMessage(content=METHOD_PROMPT),
+                                     HumanMessage(content=request)]).content)
+    note = _parse_method(reply)
+    print(f"[method] {note['method'] if note else 'NONE'}")
+    return note
+
+
 def classify(state):
     """M8 tool-selection + param extraction. TWO calls (one prompt, one job): mode classification
     stays separate from param extraction so the critical routing decision is not degraded (Lesson 029)."""
@@ -258,6 +329,10 @@ def classify(state):
         print("[classify] mode=out_of_scope")
         return {"mode": "out_of_scope"}
     mode = "contribution" if "contribution" in ml else "position"
+    # GATE (method feasibility): does the request NAME a technique we can't faithfully build? A SEPARATE call
+    # (Lesson 029). Sequential for now - could run in PARALLEL off `req` on a multi-worker backend, but the
+    # local single-model server serialises anyway, so threading buys ~nothing here. See method-feasibility-plan.md.
+    mnote = method_check(req)
 
     params_reply = _strip_think(llm.invoke([SystemMessage(content=PARAMS_PROMPT),
                                             HumanMessage(content=req)]).content)
@@ -285,6 +360,8 @@ def classify(state):
                "ticker_b": tks[1] if len(tks) >= 2 else ""}
         if start:
             out["start_date"] = start
+        if mnote:
+            out["method_note"] = mnote
         return out
     print(f"[classify] mode={mode} ticker={ticker} start={start} amount={amount}")
     out = {"mode": mode}
@@ -294,6 +371,8 @@ def classify(state):
         out["start_date"] = start
     if amount:
         out["amount"] = amount
+    if mnote:
+        out["method_note"] = mnote
     return out
 
 

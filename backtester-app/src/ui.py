@@ -17,7 +17,7 @@ except Exception:
 import pandas as pd
 from src.graph import build_run_graph
 from src.agents import (classify, write_spec, extract_legs, _leg_label,
-                        resolve_ticker, scope_refusal)
+                        resolve_ticker, resolve_symbol, scope_refusal)
 from src.runner import _load_strategy, _load_strategy_pair
 from src.core.robustness import rolling_robustness, rolling_robustness_pairs
 from src.core.engine import run_backtest
@@ -49,6 +49,12 @@ def _ticker_ok(t, start):
     except Exception:
         return False
 
+@st.cache_data
+def _resolve(raw, start):
+    """LLM-resolve + fetch-validate a single ticker, cached by (raw, start) so the LLM fires at most
+    once per symbol. Returns (validated_symbol, changed). A valid raw skips the LLM entirely."""
+    return resolve_symbol(raw, lambda t: _ticker_ok(t, start))
+
 # friendly labels for live progress - the graph emits one event per node as it finishes
 _STEP = {
     "write_spec": "📝 interpreting the strategy…",
@@ -66,6 +72,18 @@ st.caption("daily close (auto-adjusted) · yfinance · **prompt-driven** (name t
 st.session_state.setdefault("history", [])
 st.session_state.setdefault("draft", None)   # pending interpretation awaiting confirm/fix
 st.session_state.setdefault("show_help", False)   # show the welcome (first run, or a 'what can you do' query)
+
+
+def _method_note_msg(note):
+    """Method-feasibility disclosure (Lesson 044): name what was asked, why the engine can't build it, and
+    that what follows is a PROXY - not the requested method. Used at confirm-time AND on the result, so the
+    caveat travels WITH the numbers (a persuasive equity curve must not drown a one-time pre-run caption)."""
+    method = note.get("method") or "that method"
+    intent = note.get("intent") or "the requested behavior"
+    needs = note.get("needs") or "libraries beyond numpy/pandas"
+    return (f"you asked for **{method}** (for {intent}). The engine can't build it — it's numpy/pandas on "
+            f"daily closes ({needs}). This is a **generic price-based proxy**, NOT {method}; "
+            f"it does **not** capture {intent}.")
 
 
 def _robustness_ui(uid, key, compute, has_bh):
@@ -107,6 +125,8 @@ def render(b, uid=""):                  # uid keeps widget IDs unique across rep
         return
     if b["status"] == "ok":
         st.success("✅ sound — the strategy runs point-in-time and is valid")
+        if b.get("run_result", {}).get("warnings"):     # Fix 4: self-contradictory long/short (non-failing)
+            st.warning("⚠️ logic check — " + b["run_result"]["warnings"])
         # honest disclosure: live requests are SOUND-checked, never CORRECTNESS-graded (the ground-truth
         # ruler only covers the offline eval suite). Don't let "sound" overstate trust on a novel strategy.
         st.caption("**Sound, not verified-correct** — this ran and didn't peek at the future, but the logic "
@@ -114,6 +134,9 @@ def render(b, uid=""):                  # uid keeps widget IDs unique across rep
                    "trusting the numbers.")
     else:
         st.error("❌ stuck — the judge gave up after retries")
+
+    if b.get("method_note"):          # Lesson 044: label the ARTIFACT so the caveat travels with the numbers
+        st.warning("⚠️ PROXY — " + _method_note_msg(b["method_note"]))
 
     if b.get("mode") == "pairs":
         pr = b.get("pairs_result")
@@ -394,10 +417,16 @@ if draft:
         st.caption(f"engine: **{draft['mode']}**  ·  ticker: **{draft.get('ticker') or 'SPY'}**  ·  "
                    f"start: **{draft.get('start_date') or '(default 5y)'}**")
 
+        # method-feasibility disclosure = the ASK (Lesson 044): the confirm step already gates the run, so the
+        # banner turns it into an INFORMED choice - proceed with the proxy, edit the spec, or rephrase.
+        if draft.get("method_note"):
+            st.warning("⚠️ " + _method_note_msg(draft["method_note"])
+                       + " **Proceed** to run the proxy, **edit the spec**, or **rephrase** your request.")
+
         # CONTRIBUTION: two editable legs (cadence + own amount) -> "weekly $250 vs monthly $1000".
         # Direct user control (c2 philosophy); prefilled by extract_legs, but the user has final say.
         leg_inputs = None
-        pair_a = pair_b = None
+        pair_a = pair_b = pos_ticker = None
         if draft.get("mode") == "contribution":
             st.markdown("**Compare two deposit schedules** — set each leg's ticker, cadence, and amount "
                         "(different tickers = a cross-asset comparison, e.g. GOOG vs SPY):")
@@ -425,7 +454,14 @@ if draft:
             pca, pcb = st.columns(2)
             pair_a = pca.text_input("Ticker A", value=draft.get("ticker") or "", key="pair_a").strip().upper()
             pair_b = pcb.text_input("Ticker B", value=draft.get("ticker_b") or "", key="pair_b").strip().upper()
-        # (position mode: no per-deposit line - it's growth-of-$1, fully invested when long; shown in the header)
+        elif draft.get("mode") == "position":
+            # first-class ticker resolution: pre-fill an EDITABLE field with the LLM-resolved +
+            # fetch-validated symbol (mirrors pairs). "DXY" -> "DX-Y.NYB" surfaced for confirm, no re-run.
+            _res, _changed = _resolve(draft.get("ticker") or "SPY", draft.get("start_date"))
+            if _changed:
+                st.caption(f"Read **{draft.get('ticker')}** as **{_res}** (a valid Yahoo symbol) — confirm or edit:")
+            pos_ticker = st.text_input("Ticker (Yahoo symbol)", value=_res, key="pos_ticker").strip().upper()
+        # (position mode: growth-of-$1, fully invested when long; no per-deposit line - shown in the header)
 
         # the spec/strategy is only used by a 'signal' leg. For a calendar-only DCA comparison there is no
         # strategy, so hide the (irrelevant, often misframed) spec box rather than confuse the user with it.
@@ -442,9 +478,13 @@ if draft:
     identical_legs = bool(leg_inputs) and len({(l["ticker"], l["cadence"], l["amount"]) for l in leg_inputs}) == 1
     # pairs: the editable fields OVERRIDE the extracted tickers; validate BOTH load before the (costly) coder run
     pair_bad = None
+    single_bad = False
     if draft.get("mode") == "pairs":
         ticker = pair_a or ""                                  # Ticker A drives the single-load `prices`
         pair_bad = [t or "(blank)" for t in (pair_a, pair_b) if not _ticker_ok(t, draft.get("start_date"))]
+    elif draft.get("mode") == "position":                      # single-asset was un-validated -> DXY slipped through
+        ticker = pos_ticker or ticker                          # the edited (resolved) ticker drives the run
+        single_bad = not _ticker_ok(ticker, draft.get("start_date"))
 
     if run_clicked and identical_legs:
         st.error("⚠️ Both legs are identical (same ticker + cadence + amount) — that compares the asset to "
@@ -465,6 +505,16 @@ if draft:
         else:
             st.error("⚠️ Couldn't load price data for: **" + "**, **".join(pair_bad) + "**. "
                      "Use Yahoo Finance symbols (Exxon Mobil = **XOM**, Shell = **SHEL**, S&P 500 = **SPY**).")
+    elif run_clicked and single_bad:
+        # mirror the pairs name-help: resolve -> validate -> SUGGEST (never auto-swap; an LLM lookup can
+        # hallucinate a plausible-but-wrong symbol). Catches a bad ticker BEFORE the coder/engine run.
+        sym = resolve_ticker(ticker)
+        if sym and _ticker_ok(sym, draft.get("start_date")):
+            st.error(f"⚠️ **{ticker}** doesn't look like a Yahoo Finance symbol. Did you mean **{sym}**? "
+                     "Re-run with that symbol in your request.")
+        else:
+            st.error(f"⚠️ Couldn't load price data for **{ticker}**. Use a Yahoo Finance symbol — "
+                     "indices/futures use suffixes (the US Dollar Index is **DX-Y.NYB**, not DXY).")
     elif run_clicked:
         prices = _prices(ticker, period, draft.get("start_date") or start)
         state = {**draft, "spec": edited_spec, "prices": prices, "ticker": ticker, "period": period,

@@ -174,8 +174,13 @@ def route_after_code(state):
         return "pairs"
     return "position"
 
+def _harness_error(state):           # Fix 3: a failure whose traceback never entered the strategy is a
+    return "harness error" in (state.get("run_result", {}).get("failures") or "").lower()  # DATA/harness bug, not code
+
 def route_after_run(state):
     if state["run_result"]["passed"]:
+        return "done"
+    if _harness_error(state):        # the coder cannot fix a harness/data error -> terminate, do not loop
         return "done"
     if state.get("attempts", 0) >= MAX_ATTEMPTS:
         return "done"                # escalate / give up
@@ -193,7 +198,7 @@ def route_after_contribution(state):     # same self-healing brake as the positi
 def route_after_pairs(state):            # same self-healing brake as the position lane
     if state["run_result"]["passed"]:
         return "done"
-    if state.get("scope_error"):
+    if state.get("scope_error") or _harness_error(state):   # Fix 3: harness/data error is not a strategy bug
         return "done"
     if state.get("attempts", 0) >= MAX_ATTEMPTS:
         return "done"
