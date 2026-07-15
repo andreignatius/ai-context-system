@@ -26,6 +26,10 @@ def get_llm() -> BaseChatModel:
             base_url="https://api.deepinfra.com/v1/openai",
             api_key=os.getenv("DEEPINFRA_API_KEY"),
             temperature=0.5,
+            # PIN max output tokens: DeepInfra's default (65536) now EXCEEDS Qwen3-32B's max_total_tokens
+            # (40960) -> a 400. Cap it well under the limit; 8192 covers reasoning + a strategy with room
+            # for the prompt. Tunable via env in case the model's context changes again.
+            max_tokens=int(os.getenv("DEEPINFRA_MAX_TOKENS", "8192")),
         )
     return ChatOllama(
         model=os.getenv("OLLAMA_MODEL", "qwen2.5-coder:latest"),
