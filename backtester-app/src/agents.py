@@ -67,6 +67,10 @@ ORCHESTRATOR_PROMPT = (
     "4. Parameters (e.g. window lengths)\n"
     "PRESERVE the user's EXACT quantitative definitions: 'N-day' means N consecutive days (NOT N%); "
     "do not substitute or reinterpret the user's numbers or units.\n"
+    "A date range like 'since 2019' or 'last 5 years' is the BACKTEST PERIOD, NOT a rolling-window length. "
+    "For a z-score / rolling-stat rule (spreads, bands, mean-reversion) with NO lookback given, default the "
+    "rolling window to ~20-60 days - NEVER the backtest length or a large value like 1000 (that makes the "
+    "band so wide it never triggers -> the strategy is inert).\n"
 )
 
 CODER_PROMPT = (

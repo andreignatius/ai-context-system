@@ -2,6 +2,7 @@
 Soundness (the sandbox) checks "does it run". This checks "is it the right strategy" -
 by running the AI's code and a hand-written reference through the SAME engine and
 comparing. This is what catches sound-but-wrong strategies (e.g. iloc[0] vs iloc[-21])."""
+import os
 from .graph import build_graph
 from .runner import _load_strategy
 from .core.engine import run_backtest
@@ -45,7 +46,23 @@ def evaluate(request, reference, tol_ret=0.02, tol_sharpe=0.15):
             "ai": (ai.total_return, ai.sharpe), "ref": (ref.total_return, ref.sharpe),
             "diff": (dt, ds)}
 
-N_RUNS = 5      # runs per case; temp=0.5 makes the model non-deterministic -> a pass RATE
+
+# --- PAIRS golden: measured for SOUNDNESS (does it produce a WORKING, TRADING strategy?), NOT a strict
+# return-match. Pairs vary (window / one-vs-two-sided) so exact correctness is fragile; the failure mode we
+# monitor is INERT (n_trades=0 - e.g. an orchestrator-invented 1000-day z-score window that never triggers). ---
+GOLDEN_PAIRS = [
+    "Pairs trade XLF vs XLI: long the weaker when the spread widens to +2 SD, since 2019",
+    "Mean-reversion pairs trade KO vs PEP on the z-score of their spread, since 2020",
+]
+
+def evaluate_pairs(request):
+    result = app.invoke({"request": request})
+    if result["status"] != "ok":                       # inert / stuck -> the tail we monitor
+        return {"verdict": "UNSOUND", "detail": (result.get("run_result") or {}).get("failures", "")}
+    m = (result.get("pairs_result") or {}).get("metrics") or {}
+    return {"verdict": "SOUND", "n_trades": m.get("n_trades")}
+
+N_RUNS = int(os.getenv("EVAL_N_RUNS", "5"))   # runs per case -> a pass RATE (the model is non-deterministic)
 
 if __name__ == "__main__":
     print(f"Ground-truth eval: {len(GOLDEN)} cases x {N_RUNS} runs (SPY 2y)\n")
@@ -60,4 +77,14 @@ if __name__ == "__main__":
         w = verdicts.count("SOUND-BUT-WRONG")
         u = verdicts.count("UNSOUND")
         print(f"==> {request[:50]}\n    {c}/{N_RUNS} CORRECT | {w} sound-but-wrong | {u} unsound\n")
+
+    print(f"Pairs SOUNDNESS eval: {len(GOLDEN_PAIRS)} cases x {N_RUNS} runs\n")
+    for request in GOLDEN_PAIRS:
+        verdicts = []
+        for i in range(N_RUNS):
+            r = evaluate_pairs(request)
+            verdicts.append(r["verdict"])
+            print(f"  run {i+1}/{N_RUNS}: {r['verdict']:8s} n_trades={r.get('n_trades', '-')}")
+        s = verdicts.count("SOUND")
+        print(f"==> {request[:50]}\n    {s}/{N_RUNS} SOUND (traded) | {N_RUNS - s} inert/stuck\n")
 
