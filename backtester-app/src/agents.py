@@ -81,6 +81,9 @@ CODER_PROMPT = (
     "- POINT-IN-TIME: decide for the CURRENT (last) bar using ONLY the MOST RECENT bars. Do NOT loop or "
     "scan over all of history (that makes the signal fire on almost every bar). For 'N consecutive down "
     "days', check the LAST N daily changes: (history.diff().iloc[-N:] < 0).all().\n"
+    "- For an 'N-day return' (the return over the last N days), use history.pct_change(N).iloc[-1] "
+    "(= price_today / price_N_bars_ago - 1). Do NOT write history.iloc[-N] - that is only N-1 bars back "
+    "(off by one); N bars back is history.iloc[-(N+1)].\n"
 )
 
 CODER_PAIRS_PROMPT = (

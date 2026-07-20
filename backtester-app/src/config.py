@@ -21,15 +21,23 @@ def get_llm() -> BaseChatModel:
     # run-to-run variation. For a fully deterministic single build, set temperature=0.
     if LLM_PROVIDER == "deepinfra":
         # cloud: deepinfra's openai-compatible endpoint (per-token, hosted GPUs)
+        # Qwen3 is a REASONING model. DEFAULT it to thinking-OFF so it behaves like the fast, non-
+        # reasoning coder model the app was tuned for. The self-heal loop already provides the reasoning,
+        # and the eval showed thinking adds NO accuracy (6/9 either way) at ~7x the latency (489s vs 66s)
+        # + truncation risk. Set DEEPINFRA_THINK=true to re-enable (then also raise DEEPINFRA_MAX_TOKENS).
+        extra = {}
+        if os.getenv("DEEPINFRA_THINK", "false").lower() != "true":
+            extra["extra_body"] = {"chat_template_kwargs": {"enable_thinking": False}}
         return ChatOpenAI(
             model=os.getenv("DEEPINFRA_MODEL", "Qwen/Qwen3-32B"),   # was Qwen2.5-Coder-32B-Instruct (deprecated; DeepInfra aliased it to Qwen3-32B)
             base_url="https://api.deepinfra.com/v1/openai",
             api_key=os.getenv("DEEPINFRA_API_KEY"),
             temperature=0.5,
-            # PIN max output tokens: DeepInfra's default (65536) now EXCEEDS Qwen3-32B's max_total_tokens
-            # (40960) -> a 400. Cap it well under the limit; 8192 covers reasoning + a strategy with room
-            # for the prompt. Tunable via env in case the model's context changes again.
+            # PIN max output tokens: DeepInfra's default (65536) exceeds Qwen3-32B's max_total_tokens
+            # (40960) -> a 400. With thinking OFF (default) 8192 is plenty; raise via env if you re-enable
+            # thinking (reasoning alone can burn ~8k on the coder step).
             max_tokens=int(os.getenv("DEEPINFRA_MAX_TOKENS", "8192")),
+            **extra,
         )
     return ChatOllama(
         model=os.getenv("OLLAMA_MODEL", "qwen2.5-coder:latest"),
