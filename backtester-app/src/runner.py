@@ -25,7 +25,11 @@ from .core.engine import run_backtest, compute_targets
 from .core.pairs import run_pairs_backtest, compute_pair_targets
 from .core.contributions import signal_dates
 
-TIMEOUT_S = 10                     # a 5y daily backtest is <2s; generous, won't false-kill a slow-but-legit run
+TIMEOUT_S = 25                     # a 5y daily backtest is <2s on a fast box, but the deployed Streamlit
+                                   # Cloud CPU is ~5-10x slower (shared free tier) + each run re-imports
+                                   # pandas/numpy in the spawned child -> 10s false-killed legit strategies
+                                   # (e.g. RSI on ~1600 bars). 25s keeps the infinite-loop guard while giving
+                                   # the slow cloud margin.
 MEM_BYTES = 2 * 1024 ** 3          # 2 GB RLIMIT_AS (VSZ); generous - the bomb (~TBs) is caught with huge margin,
                                    # and this sits above the warmed pandas/OpenBLAS baseline (no false kill)
 

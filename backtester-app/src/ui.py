@@ -138,6 +138,20 @@ def render(b, uid=""):                  # uid keeps widget IDs unique across rep
     if b.get("method_note"):          # Lesson 044: label the ARTIFACT so the caveat travels with the numbers
         st.warning("⚠️ PROXY — " + _method_note_msg(b["method_note"]))
 
+    # build trace: the FULL judge-loop history (every coder attempt + sandbox result) from the accumulated
+    # ledger. Auto-opens on a STUCK run so the failure + each attempt are visible IN-APP - no Langfuse export
+    # needed (the langfuse_*.json files were only the trace INPUT/draft state, never the run outcome).
+    ledger = b.get("ledger") or []
+    if ledger:
+        with st.expander(f"🔧 build trace — {len(ledger)} steps (coder attempts + sandbox results)",
+                         expanded=(b.get("status") != "ok")):
+            for i, e in enumerate(ledger, 1):
+                author = getattr(e, "author", "?")
+                artifact = getattr(e, "artifact", "")
+                content = getattr(e, "content", "")
+                st.markdown(f"**{i}. `{author}` → {artifact}**")
+                st.code(str(content), language=("python" if artifact == "strategy_code" else "text"))
+
     if b.get("mode") == "pairs":
         pr = b.get("pairs_result")
         if pr:
